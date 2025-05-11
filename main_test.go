@@ -44,16 +44,6 @@ func TestParseInt_Invalid(t *testing.T) {
 	}
 }
 
-// testWriter is a custom io.Writer for testing
-type testWriter struct {
-	output *string
-}
-
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	*w.output = string(p)
-	return len(p), nil
-}
-
 // TestUnmarshalStepScalingPolicy tests JSON unmarshalling of a StepScaling policy.
 func TestUnmarshalStepScalingPolicy(t *testing.T) {
 	jsonStr := `[
