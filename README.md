@@ -27,7 +27,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.4
+        uses: cheelim1/ecs-autoscaler@v0.1.5
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +48,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.4
+        uses: cheelim1/ecs-autoscaler@v0.1.5
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -64,7 +64,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.4
+        uses: cheelim1/ecs-autoscaler@v0.1.5
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -89,7 +89,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.4
+        uses: cheelim1/ecs-autoscaler@v0.1.5
         with:
           aws-region: us-east-1
           cluster-name: my-cluster

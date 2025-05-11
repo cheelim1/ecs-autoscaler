@@ -2,12 +2,45 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/applicationautoscaling"
+	aasTypes "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling/types"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cwTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 )
+
+// Mock AWS clients for testing
+type mockAASClient struct {
+	describeScalableTargetsOutput *applicationautoscaling.DescribeScalableTargetsOutput
+	describeScalableTargetsError  error
+	describeScalingPoliciesOutput *applicationautoscaling.DescribeScalingPoliciesOutput
+	describeScalingPoliciesError  error
+}
+
+func (m *mockAASClient) DescribeScalableTargets(ctx context.Context, params *applicationautoscaling.DescribeScalableTargetsInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DescribeScalableTargetsOutput, error) {
+	return m.describeScalableTargetsOutput, m.describeScalableTargetsError
+}
+
+func (m *mockAASClient) DescribeScalingPolicies(ctx context.Context, params *applicationautoscaling.DescribeScalingPoliciesInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DescribeScalingPoliciesOutput, error) {
+	return m.describeScalingPoliciesOutput, m.describeScalingPoliciesError
+}
+
+type mockCWClient struct {
+	describeAlarmsOutput *cloudwatch.DescribeAlarmsOutput
+	describeAlarmsError  error
+}
+
+func (m *mockCWClient) DescribeAlarms(ctx context.Context, params *cloudwatch.DescribeAlarmsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.DescribeAlarmsOutput, error) {
+	return m.describeAlarmsOutput, m.describeAlarmsError
+}
 
 // TestGetIntWithDefault_Valid ensures getIntWithDefault returns the correct integer for a valid string.
 func TestGetIntWithDefault_Valid(t *testing.T) {
@@ -285,5 +318,210 @@ func TestUnmarshalInvalidPolicy(t *testing.T) {
 	var policies []PolicyDef
 	if err := json.Unmarshal([]byte(invalidJSON), &policies); err == nil {
 		t.Error("Expected error for invalid policy JSON, got nil")
+	}
+}
+
+// TestCheckScalableTarget tests the checkScalableTarget function
+func TestCheckScalableTarget(t *testing.T) {
+	// Create a mock context
+	ctx := context.Background()
+
+	// Test cases
+	tests := []struct {
+		name     string
+		resource string
+		minCap   int32
+		maxCap   int32
+		mock     *mockAASClient
+		want     bool
+		wantErr  bool
+	}{
+		{
+			name:     "valid target",
+			resource: "service/test-cluster/test-service",
+			minCap:   1,
+			maxCap:   10,
+			mock: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{
+						{
+							MinCapacity: aws.Int32(1),
+							MaxCapacity: aws.Int32(10),
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:     "invalid target",
+			resource: "service/invalid-cluster/invalid-service",
+			minCap:   1,
+			maxCap:   10,
+			mock: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:     "error case",
+			resource: "service/error-cluster/error-service",
+			minCap:   1,
+			maxCap:   10,
+			mock: &mockAASClient{
+				describeScalableTargetsError: fmt.Errorf("mock error"),
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := checkScalableTarget(ctx, tt.mock, tt.resource, tt.minCap, tt.maxCap)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkScalableTarget() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("checkScalableTarget() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCheckScalingPolicy tests the checkScalingPolicy function
+func TestCheckScalingPolicy(t *testing.T) {
+	// Create a mock context
+	ctx := context.Background()
+
+	// Test cases
+	tests := []struct {
+		name       string
+		resource   string
+		policyName string
+		mock       *mockAASClient
+		want       bool
+		wantErr    bool
+	}{
+		{
+			name:       "existing policy",
+			resource:   "service/test-cluster/test-service",
+			policyName: "test-policy",
+			mock: &mockAASClient{
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{
+						{
+							PolicyName: aws.String("test-policy"),
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:       "non-existent policy",
+			resource:   "service/test-cluster/test-service",
+			policyName: "non-existent-policy",
+			mock: &mockAASClient{
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:       "error case",
+			resource:   "service/error-cluster/error-service",
+			policyName: "error-policy",
+			mock: &mockAASClient{
+				describeScalingPoliciesError: fmt.Errorf("mock error"),
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := checkScalingPolicy(ctx, tt.mock, tt.resource, tt.policyName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkScalingPolicy() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("checkScalingPolicy() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCheckCloudWatchAlarm tests the checkCloudWatchAlarm function
+func TestCheckCloudWatchAlarm(t *testing.T) {
+	// Create a mock context
+	ctx := context.Background()
+
+	// Test cases
+	tests := []struct {
+		name      string
+		alarmName string
+		mock      *mockCWClient
+		want      bool
+		wantErr   bool
+	}{
+		{
+			name:      "existing alarm",
+			alarmName: "test-alarm",
+			mock: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{
+						{
+							AlarmName: aws.String("test-alarm"),
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:      "non-existent alarm",
+			alarmName: "non-existent-alarm",
+			mock: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:      "error case",
+			alarmName: "error-alarm",
+			mock: &mockCWClient{
+				describeAlarmsError: fmt.Errorf("mock error"),
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := checkCloudWatchAlarm(ctx, tt.mock, tt.alarmName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkCloudWatchAlarm() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("checkCloudWatchAlarm() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
