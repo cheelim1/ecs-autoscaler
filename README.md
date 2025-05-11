@@ -19,7 +19,7 @@ jobs:
   scale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -27,7 +27,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: your-org/ecs-autoscaler@v1
+        uses: cheelim1/ecs-autoscaler@v0.1.2
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +48,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: your-org/ecs-autoscaler@v1
+        uses: cheelim1/ecs-autoscaler@v0.1.2
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -64,7 +64,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: your-org/ecs-autoscaler@v1
+        uses: cheelim1/ecs-autoscaler@v0.1.2
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -89,7 +89,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: your-org/ecs-autoscaler@v1
+        uses: cheelim1/ecs-autoscaler@v0.1.2
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
