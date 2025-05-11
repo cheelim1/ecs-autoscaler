@@ -58,13 +58,13 @@ type PolicyDef struct {
 	TargetTrackingConfiguration *TargetTrackingConfig `json:"target_tracking_configuration,omitempty"`
 }
 
-func parseInt(arg, name string) int {
+func parseInt(arg, name string) (int, error) {
 	i, err := strconv.Atoi(arg)
 	if err != nil {
 		slog.Error("invalid input", "name", name, "value", arg, "error", err)
-		os.Exit(1)
+		return 0, fmt.Errorf("invalid %s: %v", name, err)
 	}
-	return i
+	return i, nil
 }
 
 func main() {
@@ -80,10 +80,30 @@ func main() {
 	cluster := os.Args[4]
 	service := os.Args[5]
 	enabled := os.Args[6] == "true"
-	minCap := int32(parseInt(os.Args[7], "min-capacity"))
-	maxCap := int32(parseInt(os.Args[8], "max-capacity"))
-	outCd := int32(parseInt(os.Args[9], "scale-out-cooldown"))
-	inCd := int32(parseInt(os.Args[10], "scale-in-cooldown"))
+
+	minCap, err := parseInt(os.Args[7], "min-capacity")
+	if err != nil {
+		os.Exit(1)
+	}
+	maxCap, err := parseInt(os.Args[8], "max-capacity")
+	if err != nil {
+		os.Exit(1)
+	}
+	outCd, err := parseInt(os.Args[9], "scale-out-cooldown")
+	if err != nil {
+		os.Exit(1)
+	}
+	inCd, err := parseInt(os.Args[10], "scale-in-cooldown")
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// Convert to int32 for AWS SDK
+	minCap32 := int32(minCap)
+	maxCap32 := int32(maxCap)
+	outCd32 := int32(outCd)
+	inCd32 := int32(inCd)
+
 	targetCPU, err := strconv.ParseFloat(os.Args[11], 64)
 	if err != nil {
 		slog.Error("invalid target-cpu-utilization", "error", err)
@@ -127,8 +147,8 @@ func main() {
 			ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 			ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 			ResourceId:        aws.String(resourceID),
-			MinCapacity:       aws.Int32(minCap),
-			MaxCapacity:       aws.Int32(maxCap),
+			MinCapacity:       aws.Int32(minCap32),
+			MaxCapacity:       aws.Int32(maxCap32),
 		}); err != nil {
 			slog.Error("failed to register scalable target", "error", err)
 			os.Exit(1)
@@ -293,8 +313,8 @@ func main() {
 		adjust int32
 		cd     int32
 	}{
-		{fmt.Sprintf("%s-%s-scale-up", cluster, service), 1, outCd},
-		{fmt.Sprintf("%s-%s-scale-down", cluster, service), -1, inCd},
+		{fmt.Sprintf("%s-%s-scale-up", cluster, service), 1, outCd32},
+		{fmt.Sprintf("%s-%s-scale-down", cluster, service), -1, inCd32},
 	} {
 		if _, err := aasClient.PutScalingPolicy(context.TODO(), &aas.PutScalingPolicyInput{
 			ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
@@ -349,7 +369,7 @@ func main() {
 			fmt.Sprintf("%s-%s-cpu-high", cluster, service),
 			"Scale up on high CPU",
 			cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
-			outCd,
+			outCd32,
 			*upPol.ScalingPolicies[0].PolicyARN,
 			"CPUUtilization",
 			targetCPU,
@@ -358,7 +378,7 @@ func main() {
 			fmt.Sprintf("%s-%s-cpu-low", cluster, service),
 			"Scale down on low CPU",
 			cwTypes.ComparisonOperatorLessThanOrEqualToThreshold,
-			inCd,
+			inCd32,
 			*downPol.ScalingPolicies[0].PolicyARN,
 			"CPUUtilization",
 			targetCPU,
@@ -367,7 +387,7 @@ func main() {
 			fmt.Sprintf("%s-%s-mem-high", cluster, service),
 			"Scale up on high memory",
 			cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
-			outCd,
+			outCd32,
 			*upPol.ScalingPolicies[0].PolicyARN,
 			"MemoryUtilization",
 			targetMem,
@@ -376,7 +396,7 @@ func main() {
 			fmt.Sprintf("%s-%s-mem-low", cluster, service),
 			"Scale down on low memory",
 			cwTypes.ComparisonOperatorLessThanOrEqualToThreshold,
-			inCd,
+			inCd32,
 			*downPol.ScalingPolicies[0].PolicyARN,
 			"MemoryUtilization",
 			targetMem,
