@@ -44,6 +44,14 @@ inputs:
     description: "CPU% threshold (only default CPU step-scaling)"
     required: false
     default: "75"
+  target-memory-utilization:
+    description: "Memory% threshold (only default CPU step-scaling)"
+    required: false
+    default: "80"
+  default-policies:
+    description: "JSON array of default policies"
+    required: false
+    default: ""
   scaling-policies:
     description: >-
       **Optional JSON array** of Application-AutoScaling policy definitions.
@@ -89,4 +97,6 @@ runs:
     - ${{ inputs.scale-out-cooldown }}
     - ${{ inputs.scale-in-cooldown }}
     - ${{ inputs.target-cpu-utilization }}
+    - ${{ inputs.target-memory-utilization }}
+    - ${{ inputs.default-policies }}
     - ${{ inputs.scaling-policies }}
