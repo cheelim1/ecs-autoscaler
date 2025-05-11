@@ -11,7 +11,10 @@ import (
 
 // TestParseInt_Valid ensures parseInt returns the correct integer for a valid string.
 func TestParseInt_Valid(t *testing.T) {
-	got := parseInt("123", "test")
+	got, err := parseInt("123", "test")
+	if err != nil {
+		t.Errorf("parseInt valid: unexpected error: %v", err)
+	}
 	want := 123
 	if got != want {
 		t.Errorf("parseInt valid: got %d, want %d", got, want)
@@ -26,23 +29,19 @@ func TestParseInt_Invalid(t *testing.T) {
 	slog.SetDefault(logger)
 
 	// Call parseInt with invalid input
-	parseInt("invalid", "test")
+	got, err := parseInt("invalid", "test")
+	if err == nil {
+		t.Error("parseInt invalid: expected error, got nil")
+	}
+	if got != 0 {
+		t.Errorf("parseInt invalid: expected 0, got %d", got)
+	}
 
 	// Check if the error message contains expected text
 	output := buf.String()
 	if !strings.Contains(output, "invalid input") || !strings.Contains(output, "invalid") {
 		t.Errorf("Expected error message not found in log output: %s", output)
 	}
-}
-
-// testWriter is a custom io.Writer for testing
-type testWriter struct {
-	output *string
-}
-
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	*w.output = string(p)
-	return len(p), nil
 }
 
 // TestUnmarshalStepScalingPolicy tests JSON unmarshalling of a StepScaling policy.
