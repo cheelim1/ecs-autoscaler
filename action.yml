@@ -1,0 +1,92 @@
+name: "ECS AutoScaler"
+description: "Register/deregister ECS Service auto-scaling and CloudWatch alarms"
+author: "cheelim1"
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  aws-access-key-id:
+    description: "AWS_ACCESS_KEY_ID (omit to use IAM role)"
+    required: false
+  aws-secret-access-key:
+    description: "AWS_SECRET_ACCESS_KEY (omit to use IAM role)"
+    required: false
+  aws-region:
+    description: "AWS region, e.g. us-east-1"
+    required: true
+  cluster-name:
+    description: "ECS cluster name"
+    required: true
+  service-name:
+    description: "ECS service name"
+    required: true
+  enabled:
+    description: "Enable auto-scaling? (`true` or `false`)"
+    required: true
+  min-capacity:
+    description: "Minimum desired count (used only when no custom policies)"
+    required: false
+    default: "1"
+  max-capacity:
+    description: "Maximum desired count (used only when no custom policies)"
+    required: false
+    default: "10"
+  scale-out-cooldown:
+    description: "Scale-out cooldown in seconds (only default CPU step-scaling)"
+    required: false
+    default: "300"
+  scale-in-cooldown:
+    description: "Scale-in cooldown in seconds (only default CPU step-scaling)"
+    required: false
+    default: "300"
+  target-cpu-utilization:
+    description: "CPU% threshold (only default CPU step-scaling)"
+    required: false
+    default: "75"
+  scaling-policies:
+    description: >-
+      **Optional JSON array** of Application-AutoScaling policy definitions.
+      If set, **overrides** the built-in CPU step-scaling.  
+      Example:
+      ```json
+      [
+        {
+          "policy_name":"cpu-step",
+          "policy_type":"StepScaling",
+          "adjustment_type":"ChangeInCapacity",
+          "cooldown":300,
+          "metric_aggregation_type":"Maximum",
+          "step_adjustments":[{"MetricIntervalLowerBound":0,"ScalingAdjustment":1}]
+        },
+        {
+          "policy_name":"mem-target",
+          "policy_type":"TargetTrackingScaling",
+          "target_tracking_configuration":{
+            "target_value":60.0,
+            "predefined_metric_specification":"ECSServiceAverageMemoryUtilization",
+            "scale_in_cooldown":200,
+            "scale_out_cooldown":200
+          }
+        }
+      ]
+      ```
+    required: false
+    default: ""
+
+runs:
+  using: docker
+  image: Dockerfile
+  args:
+    - ${{ inputs.aws-access-key-id }}
+    - ${{ inputs.aws-secret-access-key }}
+    - ${{ inputs.aws-region }}
+    - ${{ inputs.cluster-name }}
+    - ${{ inputs.service-name }}
+    - ${{ inputs.enabled }}
+    - ${{ inputs.min-capacity }}
+    - ${{ inputs.max-capacity }}
+    - ${{ inputs.scale-out-cooldown }}
+    - ${{ inputs.scale-in-cooldown }}
+    - ${{ inputs.target-cpu-utilization }}
+    - ${{ inputs.scaling-policies }}
