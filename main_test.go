@@ -9,32 +9,91 @@ import (
 	"testing"
 )
 
-// TestParseInt_Valid ensures parseInt returns the correct integer for a valid string.
-func TestParseInt_Valid(t *testing.T) {
-	got, err := parseInt("123", "test")
+// TestGetIntWithDefault_Valid ensures getIntWithDefault returns the correct integer for a valid string.
+func TestGetIntWithDefault_Valid(t *testing.T) {
+	got, err := getIntWithDefault("123", "test", 1)
 	if err != nil {
-		t.Errorf("parseInt valid: unexpected error: %v", err)
+		t.Errorf("getIntWithDefault valid: unexpected error: %v", err)
 	}
 	want := 123
 	if got != want {
-		t.Errorf("parseInt valid: got %d, want %d", got, want)
+		t.Errorf("getIntWithDefault valid: got %d, want %d", got, want)
 	}
 }
 
-// TestParseInt_Invalid ensures parseInt handles invalid input correctly.
-func TestParseInt_Invalid(t *testing.T) {
+// TestGetIntWithDefault_Empty ensures getIntWithDefault returns the default value for empty string.
+func TestGetIntWithDefault_Empty(t *testing.T) {
+	got, err := getIntWithDefault("", "test", 42)
+	if err != nil {
+		t.Errorf("getIntWithDefault empty: unexpected error: %v", err)
+	}
+	want := 42
+	if got != want {
+		t.Errorf("getIntWithDefault empty: got %d, want %d", got, want)
+	}
+}
+
+// TestGetIntWithDefault_Invalid ensures getIntWithDefault handles invalid input correctly.
+func TestGetIntWithDefault_Invalid(t *testing.T) {
 	// Create a buffer to capture log output
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	slog.SetDefault(logger)
 
-	// Call parseInt with invalid input
-	got, err := parseInt("invalid", "test")
+	// Call getIntWithDefault with invalid input
+	got, err := getIntWithDefault("invalid", "test", 42)
 	if err == nil {
-		t.Error("parseInt invalid: expected error, got nil")
+		t.Error("getIntWithDefault invalid: expected error, got nil")
 	}
 	if got != 0 {
-		t.Errorf("parseInt invalid: expected 0, got %d", got)
+		t.Errorf("getIntWithDefault invalid: expected 0, got %d", got)
+	}
+
+	// Check if the error message contains expected text
+	output := buf.String()
+	if !strings.Contains(output, "invalid input") || !strings.Contains(output, "invalid") {
+		t.Errorf("Expected error message not found in log output: %s", output)
+	}
+}
+
+// TestGetFloatWithDefault_Valid ensures getFloatWithDefault returns the correct float for a valid string.
+func TestGetFloatWithDefault_Valid(t *testing.T) {
+	got, err := getFloatWithDefault("123.45", "test", 1.0)
+	if err != nil {
+		t.Errorf("getFloatWithDefault valid: unexpected error: %v", err)
+	}
+	want := 123.45
+	if got != want {
+		t.Errorf("getFloatWithDefault valid: got %f, want %f", got, want)
+	}
+}
+
+// TestGetFloatWithDefault_Empty ensures getFloatWithDefault returns the default value for empty string.
+func TestGetFloatWithDefault_Empty(t *testing.T) {
+	got, err := getFloatWithDefault("", "test", 42.5)
+	if err != nil {
+		t.Errorf("getFloatWithDefault empty: unexpected error: %v", err)
+	}
+	want := 42.5
+	if got != want {
+		t.Errorf("getFloatWithDefault empty: got %f, want %f", got, want)
+	}
+}
+
+// TestGetFloatWithDefault_Invalid ensures getFloatWithDefault handles invalid input correctly.
+func TestGetFloatWithDefault_Invalid(t *testing.T) {
+	// Create a buffer to capture log output
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	slog.SetDefault(logger)
+
+	// Call getFloatWithDefault with invalid input
+	got, err := getFloatWithDefault("invalid", "test", 42.5)
+	if err == nil {
+		t.Error("getFloatWithDefault invalid: expected error, got nil")
+	}
+	if got != 0 {
+		t.Errorf("getFloatWithDefault invalid: expected 0, got %f", got)
 	}
 
 	// Check if the error message contains expected text

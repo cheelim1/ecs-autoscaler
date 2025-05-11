@@ -58,13 +58,28 @@ type PolicyDef struct {
 	TargetTrackingConfiguration *TargetTrackingConfig `json:"target_tracking_configuration,omitempty"`
 }
 
-func parseInt(arg, name string) (int, error) {
+func getIntWithDefault(arg, name string, defaultValue int) (int, error) {
+	if arg == "" {
+		return defaultValue, nil
+	}
 	i, err := strconv.Atoi(arg)
 	if err != nil {
 		slog.Error("invalid input", "name", name, "value", arg, "error", err)
 		return 0, fmt.Errorf("invalid %s: %v", name, err)
 	}
 	return i, nil
+}
+
+func getFloatWithDefault(arg, name string, defaultValue float64) (float64, error) {
+	if arg == "" {
+		return defaultValue, nil
+	}
+	f, err := strconv.ParseFloat(arg, 64)
+	if err != nil {
+		slog.Error("invalid input", "name", name, "value", arg, "error", err)
+		return 0, fmt.Errorf("invalid %s: %v", name, err)
+	}
+	return f, nil
 }
 
 func main() {
@@ -81,19 +96,19 @@ func main() {
 	service := os.Args[5]
 	enabled := os.Args[6] == "true"
 
-	minCap, err := parseInt(os.Args[7], "min-capacity")
+	minCap, err := getIntWithDefault(os.Args[7], "min-capacity", 1)
 	if err != nil {
 		os.Exit(1)
 	}
-	maxCap, err := parseInt(os.Args[8], "max-capacity")
+	maxCap, err := getIntWithDefault(os.Args[8], "max-capacity", 10)
 	if err != nil {
 		os.Exit(1)
 	}
-	outCd, err := parseInt(os.Args[9], "scale-out-cooldown")
+	outCd, err := getIntWithDefault(os.Args[9], "scale-out-cooldown", 300)
 	if err != nil {
 		os.Exit(1)
 	}
-	inCd, err := parseInt(os.Args[10], "scale-in-cooldown")
+	inCd, err := getIntWithDefault(os.Args[10], "scale-in-cooldown", 300)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -104,14 +119,12 @@ func main() {
 	outCd32 := int32(outCd)
 	inCd32 := int32(inCd)
 
-	targetCPU, err := strconv.ParseFloat(os.Args[11], 64)
+	targetCPU, err := getFloatWithDefault(os.Args[11], "target-cpu-utilization", 75.0)
 	if err != nil {
-		slog.Error("invalid target-cpu-utilization", "error", err)
 		os.Exit(1)
 	}
-	targetMem, err := strconv.ParseFloat(os.Args[12], 64)
+	targetMem, err := getFloatWithDefault(os.Args[12], "target-memory-utilization", 80.0)
 	if err != nil {
-		slog.Error("invalid target-memory-utilization", "error", err)
 		os.Exit(1)
 	}
 	defaultPoliciesRaw := os.Args[13]
