@@ -63,8 +63,8 @@ jobs:
           go get -v -t -d ./...
           go vet ./...
 
-      - name: go staticcheck
-        uses: dominikh/staticcheck-action@v1.3.1
-        with:
-          version: "2024.1"
-          install-go: false 
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: staticcheck ./... 
