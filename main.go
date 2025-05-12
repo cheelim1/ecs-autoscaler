@@ -338,20 +338,25 @@ func main() {
 				}
 				policyARN := *polDesc.ScalingPolicies[0].PolicyARN
 				alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
-				// Determine threshold based on scaling direction (scale-in vs scale-out)
+				// Determine threshold and comparison operator based on scaling direction (scale-in vs scale-out)
 				var threshold float64
+				var compOp cwTypes.ComparisonOperator
 				if p.ScaleDirection == "in" {
 					threshold = targetCPUIn
+					compOp = cwTypes.ComparisonOperatorLessThanOrEqualToThreshold
 				} else if p.ScaleDirection == "out" {
 					threshold = targetCPUOut
+					compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
 				} else {
 					threshold = targetCPUOut
+					compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
 				}
 				slog.Info("DEBUG: About to update/create CloudWatch alarm",
 					"alarm_name", alarmName,
 					"policy_name", p.PolicyName,
 					"policy_type", p.PolicyType,
 					"threshold", threshold,
+					"comparison_operator", compOp,
 					"namespace", p.MetricNamespace,
 					"metric_name", p.MetricName,
 				)
@@ -364,7 +369,7 @@ func main() {
 					Period:             aws.Int32(*p.Cooldown),
 					EvaluationPeriods:  aws.Int32(2),
 					Threshold:          aws.Float64(threshold),
-					ComparisonOperator: cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
+					ComparisonOperator: compOp,
 					Dimensions: []cwTypes.Dimension{
 						{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
 						{Name: aws.String("ServiceName"), Value: aws.String(service)},
