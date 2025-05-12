@@ -48,10 +48,14 @@ inputs:
     description: "CPU% threshold for scale-down (only default CPU step-scaling)"
     required: false
     default: "65"
-  target-memory-utilization:
-    description: "Memory% threshold (only default CPU step-scaling)"
+  target-memory-utilization-up:
+    description: "Memory% threshold for scale-up (only default Memory step-scaling)"
     required: false
     default: "80"
+  target-memory-utilization-down:
+    description: "Memory% threshold for scale-down (only default Memory step-scaling)"
+    required: false
+    default: "70"
   default-policies:
     description: "JSON array of default policies"
     required: false
@@ -102,6 +106,7 @@ runs:
     - ${{ inputs.scale-in-cooldown }}
     - ${{ inputs.target-cpu-utilization-up }}
     - ${{ inputs.target-cpu-utilization-down }}
-    - ${{ inputs.target-memory-utilization }}
+    - ${{ inputs.target-memory-utilization-up }}
+    - ${{ inputs.target-memory-utilization-down }}
     - ${{ inputs.default-policies }}
     - ${{ inputs.scaling-policies }}

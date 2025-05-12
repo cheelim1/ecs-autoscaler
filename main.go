@@ -140,8 +140,8 @@ func checkCloudWatchAlarm(ctx context.Context, client CWClient, alarmName string
 
 func main() {
 	// we expect 14 args after program name
-	if len(os.Args) != 15 {
-		slog.Error("invalid number of arguments", "expected", 14, "got", len(os.Args)-1)
+	if len(os.Args) != 17 {
+		slog.Error("invalid number of arguments", "expected", 16, "got", len(os.Args)-1)
 		os.Exit(1)
 	}
 
@@ -183,12 +183,16 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	targetMem, err := getFloatWithDefault(os.Args[13], "target-memory-utilization", 80.0)
+	targetMemUp, err := getFloatWithDefault(os.Args[13], "target-memory-utilization-up", 80.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	defaultPoliciesRaw := os.Args[14]
-	policiesRaw := os.Args[15]
+	targetMemDown, err := getFloatWithDefault(os.Args[14], "target-memory-utilization-down", 70.0)
+	if err != nil {
+		os.Exit(1)
+	}
+	defaultPoliciesRaw := os.Args[15]
+	policiesRaw := os.Args[16]
 
 	// AWS config
 	var cfg aws.Config
@@ -499,7 +503,7 @@ func main() {
 			period:    outCd32,
 			arn:       *upPol.ScalingPolicies[0].PolicyARN,
 			metric:    "MemoryUtilization",
-			threshold: targetMem,
+			threshold: targetMemUp,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-mem-low", cluster, service),
@@ -508,7 +512,7 @@ func main() {
 			period:    inCd32,
 			arn:       *downPol.ScalingPolicies[0].PolicyARN,
 			metric:    "MemoryUtilization",
-			threshold: targetMem,
+			threshold: targetMemDown,
 		},
 	}
 
