@@ -403,8 +403,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	slog.Info("custom scaling policies applied")
-	return
+	if len(policies) > 0 {
+		slog.Info("custom scaling policies applied")
+		return
+	}
 
 	// (3b) default CPU step-scaling + alarms
 	slog.Info("applying default CPU step-scaling policies")
