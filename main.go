@@ -175,16 +175,20 @@ func main() {
 	outCd32 := int32(outCd)
 	inCd32 := int32(inCd)
 
-	targetCPU, err := getFloatWithDefault(os.Args[11], "target-cpu-utilization", 75.0)
+	targetCPUUp, err := getFloatWithDefault(os.Args[11], "target-cpu-utilization-up", 75.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	targetMem, err := getFloatWithDefault(os.Args[12], "target-memory-utilization", 80.0)
+	targetCPUDown, err := getFloatWithDefault(os.Args[12], "target-cpu-utilization-down", 65.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	defaultPoliciesRaw := os.Args[13]
-	policiesRaw := os.Args[14]
+	targetMem, err := getFloatWithDefault(os.Args[13], "target-memory-utilization", 80.0)
+	if err != nil {
+		os.Exit(1)
+	}
+	defaultPoliciesRaw := os.Args[14]
+	policiesRaw := os.Args[15]
 
 	// AWS config
 	var cfg aws.Config
@@ -345,7 +349,7 @@ func main() {
 							Statistic:          cwTypes.StatisticAverage,
 							Period:             aws.Int32(*p.Cooldown),
 							EvaluationPeriods:  aws.Int32(2),
-							Threshold:          aws.Float64(targetCPU),
+							Threshold:          aws.Float64(targetCPUUp),
 							ComparisonOperator: cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 							Dimensions: []cwTypes.Dimension{
 								{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
@@ -477,7 +481,7 @@ func main() {
 			period:    outCd32,
 			arn:       *upPol.ScalingPolicies[0].PolicyARN,
 			metric:    "CPUUtilization",
-			threshold: targetCPU,
+			threshold: targetCPUUp,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-cpu-low", cluster, service),
@@ -486,7 +490,7 @@ func main() {
 			period:    inCd32,
 			arn:       *downPol.ScalingPolicies[0].PolicyARN,
 			metric:    "CPUUtilization",
-			threshold: targetCPU,
+			threshold: targetCPUDown,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-mem-high", cluster, service),
