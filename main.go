@@ -243,26 +243,117 @@ func main() {
 		}
 	} else {
 		// cleanup: delete alarms, policies, then deregister
-		slog.Info("disabling auto-scaling", "resource", resourceID)
-		cwClient.DeleteAlarms(context.TODO(), &cw.DeleteAlarmsInput{
-			AlarmNames: []string{
-				fmt.Sprintf("%s-%s-cpu-high", cluster, service),
-				fmt.Sprintf("%s-%s-cpu-low", cluster, service),
-				fmt.Sprintf("%s-%s-mem-high", cluster, service),
-				fmt.Sprintf("%s-%s-mem-low", cluster, service),
-			},
-		})
-		for _, name := range []string{
+		slog.Info("disabling auto-scaling", "resource", resourceID, "cluster", cluster, "service", service)
+
+		// First check if scalable target exists to determine if auto-scaling was ever enabled
+		exists, err := checkScalableTarget(context.TODO(), aasClient, resourceID, minCap32, maxCap32)
+		if err != nil {
+			slog.Error("failed to check scalable target", "error", err)
+			os.Exit(1)
+		}
+		if !exists {
+			slog.Info("auto-scaling was not enabled for this service", "cluster", cluster, "service", service)
+			return
+		}
+
+		// Parse custom policies to get all policy names
+		var policies []PolicyDef
+		if policiesRaw != "" {
+			slog.Info("parsing custom scaling policies for cleanup")
+			if err := json.Unmarshal([]byte(policiesRaw), &policies); err != nil {
+				slog.Error("invalid scaling-policies JSON during cleanup", "error", err)
+				os.Exit(1)
+			}
+		} else if defaultPoliciesRaw != "" {
+			slog.Info("parsing default scaling policies for cleanup")
+			if err := json.Unmarshal([]byte(defaultPoliciesRaw), &policies); err != nil {
+				slog.Error("invalid default-policies JSON during cleanup", "error", err)
+				os.Exit(1)
+			}
+		}
+
+		// Collect all alarm names to delete
+		alarmNames := []string{
+			// Default alarms
+			fmt.Sprintf("%s-%s-cpu-high", cluster, service),
+			fmt.Sprintf("%s-%s-cpu-low", cluster, service),
+			fmt.Sprintf("%s-%s-mem-high", cluster, service),
+			fmt.Sprintf("%s-%s-mem-low", cluster, service),
+		}
+
+		// Add custom policy alarms
+		for _, p := range policies {
+			if p.MetricName != "" && p.MetricNamespace != "" {
+				alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
+				alarmNames = append(alarmNames, alarmName)
+			}
+		}
+
+		// Check which alarms actually exist before deleting
+		existingAlarms := []string{}
+		for _, alarmName := range alarmNames {
+			exists, err := checkCloudWatchAlarm(context.TODO(), cwClient, alarmName)
+			if err != nil {
+				slog.Error("failed to check CloudWatch alarm", "alarm_name", alarmName, "error", err)
+				continue
+			}
+			if exists {
+				existingAlarms = append(existingAlarms, alarmName)
+			}
+		}
+
+		// Delete only existing alarms
+		if len(existingAlarms) > 0 {
+			slog.Info("deleting CloudWatch alarms", "alarms", existingAlarms)
+			if _, err := cwClient.DeleteAlarms(context.TODO(), &cw.DeleteAlarmsInput{
+				AlarmNames: existingAlarms,
+			}); err != nil {
+				slog.Error("failed to delete alarms", "error", err)
+				os.Exit(1)
+			}
+		}
+
+		// Collect all policy names to delete
+		policyNames := []string{
+			// Default policies
 			fmt.Sprintf("%s-%s-scale-out", cluster, service),
 			fmt.Sprintf("%s-%s-scale-in", cluster, service),
-		} {
-			aasClient.DeleteScalingPolicy(context.TODO(), &aas.DeleteScalingPolicyInput{
+		}
+
+		// Add custom policy names
+		for _, p := range policies {
+			policyNames = append(policyNames, p.PolicyName)
+		}
+
+		// Check and delete only existing scaling policies
+		existingPolicies := []string{}
+		for _, name := range policyNames {
+			exists, err := checkScalingPolicy(context.TODO(), aasClient, resourceID, name)
+			if err != nil {
+				slog.Error("failed to check scaling policy", "policy_name", name, "error", err)
+				continue
+			}
+			if exists {
+				existingPolicies = append(existingPolicies, name)
+			}
+		}
+
+		// Delete existing policies
+		for _, name := range existingPolicies {
+			slog.Info("deleting scaling policy", "policy_name", name)
+			if _, err := aasClient.DeleteScalingPolicy(context.TODO(), &aas.DeleteScalingPolicyInput{
 				ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 				ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 				ResourceId:        aws.String(resourceID),
 				PolicyName:        aws.String(name),
-			})
+			}); err != nil {
+				slog.Error("failed to delete scaling policy", "policy_name", name, "error", err)
+				os.Exit(1)
+			}
 		}
+
+		// Deregister the scalable target
+		slog.Info("deregistering scalable target", "resource", resourceID)
 		if _, err := aasClient.DeregisterScalableTarget(context.TODO(), &aas.DeregisterScalableTargetInput{
 			ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 			ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
@@ -271,7 +362,8 @@ func main() {
 			slog.Error("failed to deregister scalable target", "error", err)
 			os.Exit(1)
 		}
-		slog.Info("auto-scaling disabled and cleaned up")
+
+		slog.Info("auto-scaling disabled and cleaned up", "cluster", cluster, "service", service)
 		return
 	}
 

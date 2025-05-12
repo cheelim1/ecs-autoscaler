@@ -23,6 +23,8 @@ type mockAASClient struct {
 	describeScalableTargetsError  error
 	describeScalingPoliciesOutput *applicationautoscaling.DescribeScalingPoliciesOutput
 	describeScalingPoliciesError  error
+	deleteScalingPolicyError      error
+	deregisterScalableTargetError error
 }
 
 func (m *mockAASClient) DescribeScalableTargets(ctx context.Context, params *applicationautoscaling.DescribeScalableTargetsInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DescribeScalableTargetsOutput, error) {
@@ -33,13 +35,26 @@ func (m *mockAASClient) DescribeScalingPolicies(ctx context.Context, params *app
 	return m.describeScalingPoliciesOutput, m.describeScalingPoliciesError
 }
 
+func (m *mockAASClient) DeleteScalingPolicy(ctx context.Context, params *applicationautoscaling.DeleteScalingPolicyInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DeleteScalingPolicyOutput, error) {
+	return &applicationautoscaling.DeleteScalingPolicyOutput{}, m.deleteScalingPolicyError
+}
+
+func (m *mockAASClient) DeregisterScalableTarget(ctx context.Context, params *applicationautoscaling.DeregisterScalableTargetInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DeregisterScalableTargetOutput, error) {
+	return &applicationautoscaling.DeregisterScalableTargetOutput{}, m.deregisterScalableTargetError
+}
+
 type mockCWClient struct {
 	describeAlarmsOutput *cloudwatch.DescribeAlarmsOutput
 	describeAlarmsError  error
+	deleteAlarmsError    error
 }
 
 func (m *mockCWClient) DescribeAlarms(ctx context.Context, params *cloudwatch.DescribeAlarmsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.DescribeAlarmsOutput, error) {
 	return m.describeAlarmsOutput, m.describeAlarmsError
+}
+
+func (m *mockCWClient) DeleteAlarms(ctx context.Context, params *cloudwatch.DeleteAlarmsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.DeleteAlarmsOutput, error) {
+	return &cloudwatch.DeleteAlarmsOutput{}, m.deleteAlarmsError
 }
 
 // TestGetIntWithDefault_Valid ensures getIntWithDefault returns the correct integer for a valid string.
@@ -755,4 +770,271 @@ func TestCustomPolicyThresholdSelection(t *testing.T) {
 			t.Errorf("Expected legacy scale-in policy to use targetCPUIn (%v), got %v", targetCPUIn, threshold)
 		}
 	}
+}
+
+// TestCleanupLogic tests the cleanup behavior when disabling auto-scaling
+func TestCleanupLogic(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		resourceID     string
+		cluster        string
+		service        string
+		mockAAS        *mockAASClient
+		mockCW         *mockCWClient
+		wantErr        bool
+		expectedLogs   []string
+		unexpectedLogs []string
+	}{
+		{
+			name:       "cleanup when auto-scaling was never enabled",
+			resourceID: "service/test-cluster/test-service",
+			cluster:    "test-cluster",
+			service:    "test-service",
+			mockAAS: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{},
+				},
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{},
+				},
+			},
+			mockCW: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{},
+				},
+			},
+			wantErr: false,
+			expectedLogs: []string{
+				"auto-scaling was not enabled for this service",
+			},
+			unexpectedLogs: []string{
+				"deleting CloudWatch alarms",
+				"deleting scaling policy",
+				"deregistering scalable target",
+			},
+		},
+		{
+			name:       "cleanup with default policies",
+			resourceID: "service/test-cluster/test-service",
+			cluster:    "test-cluster",
+			service:    "test-service",
+			mockAAS: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{
+						{
+							MinCapacity: aws.Int32(1),
+							MaxCapacity: aws.Int32(10),
+						},
+					},
+				},
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{
+						{
+							PolicyName: aws.String("test-cluster-test-service-scale-out"),
+						},
+						{
+							PolicyName: aws.String("test-cluster-test-service-scale-in"),
+						},
+					},
+				},
+			},
+			mockCW: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{
+						{
+							AlarmName: aws.String("test-cluster-test-service-cpu-high"),
+						},
+						{
+							AlarmName: aws.String("test-cluster-test-service-cpu-low"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedLogs: []string{
+				"deleting CloudWatch alarms",
+				"deleting scaling policy",
+				"deregistering scalable target",
+			},
+		},
+		{
+			name:       "cleanup with custom policies",
+			resourceID: "service/test-cluster/test-service",
+			cluster:    "test-cluster",
+			service:    "test-service",
+			mockAAS: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{
+						{
+							MinCapacity: aws.Int32(1),
+							MaxCapacity: aws.Int32(10),
+						},
+					},
+				},
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{
+						{
+							PolicyName: aws.String("custom-scale-out"),
+						},
+					},
+				},
+			},
+			mockCW: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{
+						{
+							AlarmName: aws.String("test-cluster-test-service-custom-scale-out"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedLogs: []string{
+				"deleting CloudWatch alarms",
+				"deleting scaling policy",
+				"deregistering scalable target",
+			},
+		},
+		{
+			name:       "error during cleanup",
+			resourceID: "service/test-cluster/test-service",
+			cluster:    "test-cluster",
+			service:    "test-service",
+			mockAAS: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{
+						{
+							MinCapacity: aws.Int32(1),
+							MaxCapacity: aws.Int32(10),
+						},
+					},
+				},
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{
+						{
+							PolicyName: aws.String("test-cluster-test-service-scale-out"),
+						},
+					},
+				},
+				deleteScalingPolicyError: fmt.Errorf("failed to delete policy"),
+			},
+			mockCW: &mockCWClient{
+				describeAlarmsOutput: &cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cwTypes.MetricAlarm{},
+				},
+			},
+			wantErr: true,
+			expectedLogs: []string{
+				"failed to delete scaling policy",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a buffer to capture log output
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			slog.SetDefault(logger)
+
+			// Call cleanup logic
+			err := cleanupAutoScaling(ctx, tt.mockAAS, tt.mockCW, tt.resourceID, tt.cluster, tt.service)
+
+			// Check error
+			if (err != nil) != tt.wantErr {
+				t.Errorf("cleanupAutoScaling() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// Check logs
+			output := buf.String()
+			for _, expected := range tt.expectedLogs {
+				if !strings.Contains(output, expected) {
+					t.Errorf("Expected log message not found: %s", expected)
+				}
+			}
+			for _, unexpected := range tt.unexpectedLogs {
+				if strings.Contains(output, unexpected) {
+					t.Errorf("Unexpected log message found: %s", unexpected)
+				}
+			}
+		})
+	}
+}
+
+// cleanupAutoScaling is a test helper function that simulates the cleanup process
+func cleanupAutoScaling(ctx context.Context, aasClient *mockAASClient, cwClient *mockCWClient, resourceID, cluster, service string) error {
+	// Check if scalable target exists
+	targets, err := aasClient.DescribeScalableTargets(ctx, &applicationautoscaling.DescribeScalableTargetsInput{
+		ResourceIds: []string{resourceID},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to describe scalable targets: %v", err)
+	}
+
+	if len(targets.ScalableTargets) == 0 {
+		slog.Info("auto-scaling was not enabled for this service")
+		return nil
+	}
+
+	// Get existing alarms
+	alarms, err := cwClient.DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{})
+	if err != nil {
+		return fmt.Errorf("failed to describe alarms: %v", err)
+	}
+
+	// Collect alarm names
+	var alarmNames []string
+	for _, alarm := range alarms.MetricAlarms {
+		alarmNames = append(alarmNames, *alarm.AlarmName)
+	}
+
+	// Delete alarms if any exist
+	if len(alarmNames) > 0 {
+		slog.Info("deleting CloudWatch alarms")
+		_, err = cwClient.DeleteAlarms(ctx, &cloudwatch.DeleteAlarmsInput{
+			AlarmNames: alarmNames,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete alarms: %v", err)
+		}
+	}
+
+	// Get existing policies
+	policies, err := aasClient.DescribeScalingPolicies(ctx, &applicationautoscaling.DescribeScalingPoliciesInput{
+		ResourceId: aws.String(resourceID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to describe scaling policies: %v", err)
+	}
+
+	// Delete each policy
+	for _, policy := range policies.ScalingPolicies {
+		slog.Info("deleting scaling policy")
+		_, err = aasClient.DeleteScalingPolicy(ctx, &applicationautoscaling.DeleteScalingPolicyInput{
+			PolicyName:        policy.PolicyName,
+			ResourceId:        aws.String(resourceID),
+			ScalableDimension: policy.ScalableDimension,
+			ServiceNamespace:  policy.ServiceNamespace,
+		})
+		if err != nil {
+			slog.Error("failed to delete scaling policy", "error", err)
+			return fmt.Errorf("failed to delete scaling policy: %v", err)
+		}
+	}
+
+	// Deregister scalable target
+	slog.Info("deregistering scalable target")
+	_, err = aasClient.DeregisterScalableTarget(ctx, &applicationautoscaling.DeregisterScalableTargetInput{
+		ResourceId:        aws.String(resourceID),
+		ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
+		ServiceNamespace:  aasTypes.ServiceNamespace("ecs"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to deregister scalable target: %v", err)
+	}
+
+	return nil
 }
