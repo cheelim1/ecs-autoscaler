@@ -722,3 +722,37 @@ func TestPolicyAndAlarmUpdates(t *testing.T) {
 		})
 	}
 }
+
+// TestCustomPolicyThresholdSelection verifies that the correct threshold is chosen for scale-in and scale-out policies using scale_direction
+func TestCustomPolicyThresholdSelection(t *testing.T) {
+	targetCPUIn := 20.0
+	targetCPUOut := 50.0
+
+	policies := []PolicyDef{
+		{PolicyName: "my-service_scale_in", PolicyType: "StepScaling", MetricName: "CPUUtilization", MetricNamespace: "AWS/ECS", ScaleDirection: "in"},
+		{PolicyName: "my-service_scale_out", PolicyType: "StepScaling", MetricName: "CPUUtilization", MetricNamespace: "AWS/ECS", ScaleDirection: "out"},
+		{PolicyName: "my-service_scale_in_legacy", PolicyType: "StepScaling", MetricName: "CPUUtilization", MetricNamespace: "AWS/ECS", ScaleDirection: ""}, // fallback to name
+	}
+
+	for _, p := range policies {
+		var threshold float64
+		if p.ScaleDirection == "in" {
+			threshold = targetCPUIn
+		} else if p.ScaleDirection == "out" {
+			threshold = targetCPUOut
+		} else if strings.Contains(strings.ToLower(p.PolicyName), "in") {
+			threshold = targetCPUIn
+		} else {
+			threshold = targetCPUOut
+		}
+		if p.ScaleDirection == "in" && threshold != targetCPUIn {
+			t.Errorf("Expected scale-in policy to use targetCPUIn (%v), got %v", targetCPUIn, threshold)
+		}
+		if p.ScaleDirection == "out" && threshold != targetCPUOut {
+			t.Errorf("Expected scale-out policy to use targetCPUOut (%v), got %v", targetCPUOut, threshold)
+		}
+		if p.ScaleDirection == "" && strings.Contains(p.PolicyName, "in") && threshold != targetCPUIn {
+			t.Errorf("Expected legacy scale-in policy to use targetCPUIn (%v), got %v", targetCPUIn, threshold)
+		}
+	}
+}

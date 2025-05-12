@@ -66,6 +66,7 @@ type PolicyDef struct {
 	MetricAggregationType       string                `json:"metric_aggregation_type,omitempty"`
 	StepAdjustments             []StepAdj             `json:"step_adjustments,omitempty"`
 	TargetTrackingConfiguration *TargetTrackingConfig `json:"target_tracking_configuration,omitempty"`
+	ScaleDirection              string                `json:"scale_direction,omitempty"` // "in" or "out" (optional, explicit)
 }
 
 func getIntWithDefault(arg, name string, defaultValue int) (int, error) {
@@ -337,11 +338,20 @@ func main() {
 				}
 				policyARN := *polDesc.ScalingPolicies[0].PolicyARN
 				alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
+				// Determine threshold based on scaling direction (scale-in vs scale-out)
+				var threshold float64
+				if p.ScaleDirection == "in" {
+					threshold = targetCPUIn
+				} else if p.ScaleDirection == "out" {
+					threshold = targetCPUOut
+				} else {
+					threshold = targetCPUOut
+				}
 				slog.Info("DEBUG: About to update/create CloudWatch alarm",
 					"alarm_name", alarmName,
 					"policy_name", p.PolicyName,
 					"policy_type", p.PolicyType,
-					"threshold", targetCPUOut,
+					"threshold", threshold,
 					"namespace", p.MetricNamespace,
 					"metric_name", p.MetricName,
 				)
@@ -353,7 +363,7 @@ func main() {
 					Statistic:          cwTypes.StatisticAverage,
 					Period:             aws.Int32(*p.Cooldown),
 					EvaluationPeriods:  aws.Int32(2),
-					Threshold:          aws.Float64(targetCPUOut),
+					Threshold:          aws.Float64(threshold),
 					ComparisonOperator: cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 					Dimensions: []cwTypes.Dimension{
 						{Name: aws.String("ClusterName"), Value: aws.String(cluster)},

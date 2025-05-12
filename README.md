@@ -27,7 +27,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +48,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -66,7 +66,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -91,7 +91,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -148,7 +148,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -239,16 +239,32 @@ Use this when you want to maintain a specific metric value:
 
 ```yaml
       - name: Configure Custom Policy With Alarm
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
           service-name: my-service
           enabled: true
+          target-cpu-utilization-in: 20
+          target-cpu-utilization-out: 80
           scaling-policies: >
             [
               {
-                "policy_name": "custom-cpu-step",
+                "policy_name": "custom-cpu-scale-in",
+                "scale_direction": "in",
+                "policy_type": "StepScaling",
+                "adjustment_type": "ChangeInCapacity",
+                "cooldown": 300,
+                "metric_aggregation_type": "Maximum",
+                "metric_name": "CPUUtilization",
+                "metric_namespace": "AWS/ECS",
+                "step_adjustments": [
+                  {"MetricIntervalUpperBound": 0, "ScalingAdjustment": -1}
+                ]
+              },
+              {
+                "policy_name": "custom-cpu-scale-out",
+                "scale_direction": "out",
                 "policy_type": "StepScaling",
                 "adjustment_type": "ChangeInCapacity",
                 "cooldown": 300,
@@ -262,11 +278,17 @@ Use this when you want to maintain a specific metric value:
             ]
 ```
 
+**Note:**
+- The `scale_direction` field ("in" or "out") explicitly controls which threshold is used for the alarm:
+  - `scale_direction: "in"` uses `target-cpu-utilization-in` as the alarm threshold.
+  - `scale_direction: "out"` uses `target-cpu-utilization-out` as the alarm threshold.
+- This is the recommended, explicit, and robust way to control alarm thresholds for custom policies.
+
 ### Example: Custom Policy Without Alarm Creation
 
 ```yaml
       - name: Configure Custom Policy Without Alarm
-        uses: cheelim1/ecs-autoscaler@0.1.10
+        uses: cheelim1/ecs-autoscaler@v0.1.11
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
