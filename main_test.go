@@ -558,3 +558,36 @@ func TestParseCPUThresholds(t *testing.T) {
 		t.Errorf("expected down default 65.0, got %v", downDefault)
 	}
 }
+
+// TestParseMemoryThresholds ensures both up and down Memory thresholds are parsed correctly.
+func TestParseMemoryThresholds(t *testing.T) {
+	up, err := getFloatWithDefault("90", "target-memory-utilization-up", 80.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing up memory threshold: %v", err)
+	}
+	if up != 90 {
+		t.Errorf("expected up memory threshold 90, got %v", up)
+	}
+	down, err := getFloatWithDefault("70", "target-memory-utilization-down", 70.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing down memory threshold: %v", err)
+	}
+	if down != 70 {
+		t.Errorf("expected down memory threshold 70, got %v", down)
+	}
+	// Test defaults
+	upDefault, err := getFloatWithDefault("", "target-memory-utilization-up", 80.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing up memory default: %v", err)
+	}
+	if upDefault != 80.0 {
+		t.Errorf("expected up memory default 80.0, got %v", upDefault)
+	}
+	downDefault, err := getFloatWithDefault("", "target-memory-utilization-down", 70.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing down memory default: %v", err)
+	}
+	if downDefault != 70.0 {
+		t.Errorf("expected down memory default 70.0, got %v", downDefault)
+	}
+}
