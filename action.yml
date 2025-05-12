@@ -40,20 +40,20 @@ inputs:
     description: "Scale-in cooldown in seconds (only default CPU step-scaling)"
     required: false
     default: "300"
-  target-cpu-utilization-up:
-    description: "CPU% threshold for scale-up (only default CPU step-scaling)"
+  target-cpu-utilization-out:
+    description: "CPU% threshold for scale-out (only default CPU step-scaling)"
     required: false
     default: "75"
-  target-cpu-utilization-down:
-    description: "CPU% threshold for scale-down (only default CPU step-scaling)"
+  target-cpu-utilization-in:
+    description: "CPU% threshold for scale-in (only default CPU step-scaling)"
     required: false
     default: "65"
-  target-memory-utilization-up:
-    description: "Memory% threshold for scale-up (only default Memory step-scaling)"
+  target-memory-utilization-out:
+    description: "Memory% threshold for scale-out (only default Memory step-scaling)"
     required: false
     default: "80"
-  target-memory-utilization-down:
-    description: "Memory% threshold for scale-down (only default Memory step-scaling)"
+  target-memory-utilization-in:
+    description: "Memory% threshold for scale-in (only default Memory step-scaling)"
     required: false
     default: "70"
   default-policies:
@@ -104,9 +104,9 @@ runs:
     - ${{ inputs.max-capacity }}
     - ${{ inputs.scale-out-cooldown }}
     - ${{ inputs.scale-in-cooldown }}
-    - ${{ inputs.target-cpu-utilization-up }}
-    - ${{ inputs.target-cpu-utilization-down }}
-    - ${{ inputs.target-memory-utilization-up }}
-    - ${{ inputs.target-memory-utilization-down }}
+    - ${{ inputs.target-cpu-utilization-out }}
+    - ${{ inputs.target-cpu-utilization-in }}
+    - ${{ inputs.target-memory-utilization-out }}
+    - ${{ inputs.target-memory-utilization-in }}
     - ${{ inputs.default-policies }}
     - ${{ inputs.scaling-policies }}

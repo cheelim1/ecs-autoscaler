@@ -530,8 +530,8 @@ func TestCheckCloudWatchAlarm(t *testing.T) {
 func TestThresholdParsing(t *testing.T) {
 	tests := []struct {
 		name          string
-		upThreshold   string
-		downThreshold string
+		outThreshold  string
+		inThreshold   string
 		wantUp        float64
 		wantDown      float64
 		wantErr       bool
@@ -539,8 +539,8 @@ func TestThresholdParsing(t *testing.T) {
 	}{
 		{
 			name:          "valid CPU thresholds",
-			upThreshold:   "80",
-			downThreshold: "60",
+			outThreshold:  "80",
+			inThreshold:   "60",
 			wantUp:        80.0,
 			wantDown:      60.0,
 			wantErr:       false,
@@ -548,8 +548,8 @@ func TestThresholdParsing(t *testing.T) {
 		},
 		{
 			name:          "valid memory thresholds",
-			upThreshold:   "85",
-			downThreshold: "65",
+			outThreshold:  "85",
+			inThreshold:   "65",
 			wantUp:        85.0,
 			wantDown:      65.0,
 			wantErr:       false,
@@ -557,8 +557,8 @@ func TestThresholdParsing(t *testing.T) {
 		},
 		{
 			name:          "default CPU thresholds",
-			upThreshold:   "",
-			downThreshold: "",
+			outThreshold:  "",
+			inThreshold:   "",
 			wantUp:        75.0, // default
 			wantDown:      65.0, // default
 			wantErr:       false,
@@ -566,8 +566,8 @@ func TestThresholdParsing(t *testing.T) {
 		},
 		{
 			name:          "default memory thresholds",
-			upThreshold:   "",
-			downThreshold: "",
+			outThreshold:  "",
+			inThreshold:   "",
 			wantUp:        80.0, // default
 			wantDown:      70.0, // default
 			wantErr:       false,
@@ -575,8 +575,8 @@ func TestThresholdParsing(t *testing.T) {
 		},
 		{
 			name:          "invalid thresholds",
-			upThreshold:   "invalid",
-			downThreshold: "invalid",
+			outThreshold:  "invalid",
+			inThreshold:   "invalid",
 			wantErr:       true,
 			thresholdType: "cpu",
 		},
@@ -584,15 +584,15 @@ func TestThresholdParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var upDefault, downDefault float64
+			var outDefault, inDefault float64
 			if tt.thresholdType == "cpu" {
-				upDefault, downDefault = 75.0, 65.0
+				outDefault, inDefault = 75.0, 65.0
 			} else {
-				upDefault, downDefault = 80.0, 70.0
+				outDefault, inDefault = 80.0, 70.0
 			}
 
-			up, err := getFloatWithDefault(tt.upThreshold,
-				fmt.Sprintf("target-%s-utilization-up", tt.thresholdType), upDefault)
+			up, err := getFloatWithDefault(tt.outThreshold,
+				fmt.Sprintf("target-%s-utilization-up", tt.thresholdType), outDefault)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getFloatWithDefault() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -601,8 +601,8 @@ func TestThresholdParsing(t *testing.T) {
 				t.Errorf("getFloatWithDefault() up = %v, want %v", up, tt.wantUp)
 			}
 
-			down, err := getFloatWithDefault(tt.downThreshold,
-				fmt.Sprintf("target-%s-utilization-down", tt.thresholdType), downDefault)
+			down, err := getFloatWithDefault(tt.inThreshold,
+				fmt.Sprintf("target-%s-utilization-down", tt.thresholdType), inDefault)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getFloatWithDefault() error = %v, wantErr %v", err, tt.wantErr)
 				return
