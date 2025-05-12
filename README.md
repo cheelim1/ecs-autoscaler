@@ -1,4 +1,4 @@
-# ECS AutoScaler
+# ECS Service AutoScaler
 
 A GitHub Action to register/deregister AWS ECS Service auto-scaling and CloudWatch alarms.
 Written in Go and published as a Docker-based action.
@@ -27,7 +27,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.5
+        uses: cheelim1/ecs-autoscaler@v0.1.6
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +48,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.5
+        uses: cheelim1/ecs-autoscaler@v0.1.6
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -64,7 +64,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.5
+        uses: cheelim1/ecs-autoscaler@v0.1.6
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -89,7 +89,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.5
+        uses: cheelim1/ecs-autoscaler@v0.1.6
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -199,3 +199,65 @@ Use this when you want to maintain a specific metric value:
   }
 }
 ```
+
+## Alarm Creation Logic
+
+- **Default step scaling (no custom policies):**
+  - The action will always create and attach CloudWatch alarms for CPU and memory utilization (high/low) to the scaling policies.
+- **Custom scaling policies:**
+  - The action will only create and attach a CloudWatch alarm if both `metric_name` and `metric_namespace` are provided in the policy JSON.
+  - If these fields are not provided, no alarm will be created for that policy (you are responsible for alarm management).
+
+### Example: Custom Policy With Alarm Creation
+
+```yaml
+      - name: Configure Custom Policy With Alarm
+        uses: cheelim1/ecs-autoscaler@v0.1.6
+        with:
+          aws-region: us-east-1
+          cluster-name: my-cluster
+          service-name: my-service
+          enabled: true
+          scaling-policies: >
+            [
+              {
+                "policy_name": "custom-cpu-step",
+                "policy_type": "StepScaling",
+                "adjustment_type": "ChangeInCapacity",
+                "cooldown": 300,
+                "metric_aggregation_type": "Maximum",
+                "metric_name": "CPUUtilization",
+                "metric_namespace": "AWS/ECS",
+                "step_adjustments": [
+                  {"MetricIntervalLowerBound": 0, "ScalingAdjustment": 1}
+                ]
+              }
+            ]
+```
+
+### Example: Custom Policy Without Alarm Creation
+
+```yaml
+      - name: Configure Custom Policy Without Alarm
+        uses: cheelim1/ecs-autoscaler@v0.1.6
+        with:
+          aws-region: us-east-1
+          cluster-name: my-cluster
+          service-name: my-service
+          enabled: true
+          scaling-policies: >
+            [
+              {
+                "policy_name": "custom-step-no-alarm",
+                "policy_type": "StepScaling",
+                "adjustment_type": "ChangeInCapacity",
+                "cooldown": 300,
+                "metric_aggregation_type": "Maximum",
+                "step_adjustments": [
+                  {"MetricIntervalLowerBound": 0, "ScalingAdjustment": 1}
+                ]
+              }
+            ]
+```
+
+In the second example, **no alarm will be created or attached** for the custom policy.

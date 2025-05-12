@@ -322,10 +322,22 @@ func main() {
 						os.Exit(1)
 					}
 
-					// Create CloudWatch alarm for step scaling
-					if p.MetricName != "" {
+					// Only create CloudWatch alarm if both metric_name and metric_namespace are provided
+					if p.MetricName != "" && p.MetricNamespace != "" {
+						// Fetch policy ARN
+						polDesc, err := aasClient.DescribeScalingPolicies(context.TODO(), &aas.DescribeScalingPoliciesInput{
+							ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
+							ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
+							ResourceId:        aws.String(resourceID),
+							PolicyNames:       []string{p.PolicyName},
+						})
+						if err != nil || len(polDesc.ScalingPolicies) == 0 {
+							slog.Error("failed to describe scaling policy for alarm", "policy_name", p.PolicyName, "error", err)
+							os.Exit(1)
+						}
+						policyARN := *polDesc.ScalingPolicies[0].PolicyARN
 						alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
-						_, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
+						_, err = cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
 							AlarmName:          aws.String(alarmName),
 							AlarmDescription:   aws.String(fmt.Sprintf("Scale based on %s", p.MetricName)),
 							Namespace:          aws.String(p.MetricNamespace),
@@ -339,11 +351,15 @@ func main() {
 								{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
 								{Name: aws.String("ServiceName"), Value: aws.String(service)},
 							},
+							AlarmActions: []string{policyARN},
 						})
 						if err != nil {
 							slog.Error("failed to put metric alarm", "alarm_name", alarmName, "error", err)
 							os.Exit(1)
 						}
+						slog.Info("created CloudWatch alarm for custom policy", "alarm_name", alarmName)
+					} else {
+						slog.Info("no metric_name/metric_namespace specified; no alarm created for this custom policy", "policy_name", p.PolicyName)
 					}
 
 				case "TargetTrackingScaling":
