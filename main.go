@@ -175,19 +175,19 @@ func main() {
 	outCd32 := int32(outCd)
 	inCd32 := int32(inCd)
 
-	targetCPUUp, err := getFloatWithDefault(os.Args[11], "target-cpu-utilization-up", 75.0)
+	targetCPUOut, err := getFloatWithDefault(os.Args[11], "target-cpu-utilization-out", 75.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	targetCPUDown, err := getFloatWithDefault(os.Args[12], "target-cpu-utilization-down", 65.0)
+	targetCPUIn, err := getFloatWithDefault(os.Args[12], "target-cpu-utilization-in", 65.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	targetMemUp, err := getFloatWithDefault(os.Args[13], "target-memory-utilization-up", 80.0)
+	targetMemOut, err := getFloatWithDefault(os.Args[13], "target-memory-utilization-out", 80.0)
 	if err != nil {
 		os.Exit(1)
 	}
-	targetMemDown, err := getFloatWithDefault(os.Args[14], "target-memory-utilization-down", 70.0)
+	targetMemIn, err := getFloatWithDefault(os.Args[14], "target-memory-utilization-in", 70.0)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -252,8 +252,8 @@ func main() {
 			},
 		})
 		for _, name := range []string{
-			fmt.Sprintf("%s-%s-scale-up", cluster, service),
-			fmt.Sprintf("%s-%s-scale-down", cluster, service),
+			fmt.Sprintf("%s-%s-scale-out", cluster, service),
+			fmt.Sprintf("%s-%s-scale-in", cluster, service),
 		} {
 			aasClient.DeleteScalingPolicy(context.TODO(), &aas.DeleteScalingPolicyInput{
 				ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
@@ -337,7 +337,15 @@ func main() {
 				}
 				policyARN := *polDesc.ScalingPolicies[0].PolicyARN
 				alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
-				_, err = cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
+				slog.Info("DEBUG: About to update/create CloudWatch alarm",
+					"alarm_name", alarmName,
+					"policy_name", p.PolicyName,
+					"policy_type", p.PolicyType,
+					"threshold", targetCPUOut,
+					"namespace", p.MetricNamespace,
+					"metric_name", p.MetricName,
+				)
+				result, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
 					AlarmName:          aws.String(alarmName),
 					AlarmDescription:   aws.String(fmt.Sprintf("Scale based on %s", p.MetricName)),
 					Namespace:          aws.String(p.MetricNamespace),
@@ -345,7 +353,7 @@ func main() {
 					Statistic:          cwTypes.StatisticAverage,
 					Period:             aws.Int32(*p.Cooldown),
 					EvaluationPeriods:  aws.Int32(2),
-					Threshold:          aws.Float64(targetCPUUp),
+					Threshold:          aws.Float64(targetCPUOut),
 					ComparisonOperator: cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 					Dimensions: []cwTypes.Dimension{
 						{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
@@ -357,6 +365,7 @@ func main() {
 					slog.Error("failed to put metric alarm", "alarm_name", alarmName, "error", err)
 					os.Exit(1)
 				}
+				slog.Info("DEBUG: PutMetricAlarm call succeeded", "alarm_name", alarmName, "result", result)
 				slog.Info("created/updated CloudWatch alarm for custom policy", "alarm_name", alarmName)
 			} else {
 				slog.Info("no metric_name/metric_namespace specified; no alarm created for this custom policy", "policy_name", p.PolicyName)
@@ -416,8 +425,8 @@ func main() {
 		adjust int32
 		cd     int32
 	}{
-		{fmt.Sprintf("%s-%s-scale-up", cluster, service), 1, outCd32},
-		{fmt.Sprintf("%s-%s-scale-down", cluster, service), -1, inCd32},
+		{fmt.Sprintf("%s-%s-scale-out", cluster, service), 1, outCd32},
+		{fmt.Sprintf("%s-%s-scale-in", cluster, service), -1, inCd32},
 	} {
 		if _, err := aasClient.PutScalingPolicy(context.TODO(), &aas.PutScalingPolicyInput{
 			ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
@@ -442,7 +451,7 @@ func main() {
 		ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 		ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 		ResourceId:        aws.String(resourceID),
-		PolicyNames:       []string{fmt.Sprintf("%s-%s-scale-up", cluster, service)},
+		PolicyNames:       []string{fmt.Sprintf("%s-%s-scale-out", cluster, service)},
 	})
 	if err != nil || len(upPol.ScalingPolicies) == 0 {
 		slog.Error("failed to describe up-policy", "error", err)
@@ -452,7 +461,7 @@ func main() {
 		ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 		ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 		ResourceId:        aws.String(resourceID),
-		PolicyNames:       []string{fmt.Sprintf("%s-%s-scale-down", cluster, service)},
+		PolicyNames:       []string{fmt.Sprintf("%s-%s-scale-in", cluster, service)},
 	})
 	if err != nil || len(downPol.ScalingPolicies) == 0 {
 		slog.Error("failed to describe down-policy", "error", err)
@@ -470,44 +479,51 @@ func main() {
 	}{
 		{
 			name:      fmt.Sprintf("%s-%s-cpu-high", cluster, service),
-			desc:      "Scale up on high CPU",
+			desc:      "Scale out on high CPU",
 			comp:      cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 			period:    outCd32,
 			arn:       *upPol.ScalingPolicies[0].PolicyARN,
 			metric:    "CPUUtilization",
-			threshold: targetCPUUp,
+			threshold: targetCPUOut,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-cpu-low", cluster, service),
-			desc:      "Scale down on low CPU",
+			desc:      "Scale in on low CPU",
 			comp:      cwTypes.ComparisonOperatorLessThanOrEqualToThreshold,
 			period:    inCd32,
 			arn:       *downPol.ScalingPolicies[0].PolicyARN,
 			metric:    "CPUUtilization",
-			threshold: targetCPUDown,
+			threshold: targetCPUIn,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-mem-high", cluster, service),
-			desc:      "Scale up on high memory",
+			desc:      "Scale out on high memory",
 			comp:      cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 			period:    outCd32,
 			arn:       *upPol.ScalingPolicies[0].PolicyARN,
 			metric:    "MemoryUtilization",
-			threshold: targetMemUp,
+			threshold: targetMemOut,
 		},
 		{
 			name:      fmt.Sprintf("%s-%s-mem-low", cluster, service),
-			desc:      "Scale down on low memory",
+			desc:      "Scale in on low memory",
 			comp:      cwTypes.ComparisonOperatorLessThanOrEqualToThreshold,
 			period:    inCd32,
 			arn:       *downPol.ScalingPolicies[0].PolicyARN,
 			metric:    "MemoryUtilization",
-			threshold: targetMemDown,
+			threshold: targetMemIn,
 		},
 	}
 
 	// Check and create CloudWatch alarms only if they don't exist
 	for _, a := range alarms {
+		slog.Info("DEBUG: About to update/create CloudWatch alarm",
+			"alarm_name", a.name,
+			"desc", a.desc,
+			"threshold", a.threshold,
+			"namespace", "AWS/ECS",
+			"metric_name", a.metric,
+		)
 		exists, err := checkCloudWatchAlarm(context.TODO(), cwClient, a.name)
 		if err != nil {
 			slog.Error("failed to check CloudWatch alarm", "alarm_name", a.name, "error", err)
@@ -516,7 +532,7 @@ func main() {
 
 		if !exists {
 			slog.Info("creating CloudWatch alarm", "alarm_name", a.name)
-			if _, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
+			result, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
 				AlarmName:          aws.String(a.name),
 				AlarmDescription:   aws.String(a.desc),
 				Namespace:          aws.String("AWS/ECS"),
@@ -531,10 +547,12 @@ func main() {
 					{Name: aws.String("ServiceName"), Value: aws.String(service)},
 				},
 				AlarmActions: []string{a.arn},
-			}); err != nil {
+			})
+			if err != nil {
 				slog.Error("failed to put metric alarm", "alarm_name", a.name, "error", err)
 				os.Exit(1)
 			}
+			slog.Info("DEBUG: PutMetricAlarm call succeeded", "alarm_name", a.name, "result", result)
 		} else {
 			slog.Info("CloudWatch alarm already exists", "alarm_name", a.name)
 		}
