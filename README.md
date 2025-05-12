@@ -27,7 +27,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +48,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -56,7 +56,8 @@ This will enable auto-scaling with default settings:
           enabled: true
           min-capacity: 2
           max-capacity: 10
-          target-cpu-utilization: 70
+          target-cpu-utilization-up: 80
+          target-cpu-utilization-down: 60
           target-memory-utilization: 85
 ```
 
@@ -64,7 +65,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -89,7 +90,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -137,8 +138,29 @@ This will enable auto-scaling with default settings:
 | `max-capacity` | Maximum desired count | 10 |
 | `scale-out-cooldown` | Scale-out cooldown in seconds | 300 |
 | `scale-in-cooldown` | Scale-in cooldown in seconds | 300 |
-| `target-cpu-utilization` | CPU% threshold | 75 |
+| `target-cpu-utilization-up` | CPU% threshold for scale-up | 75 |
+| `target-cpu-utilization-down` | CPU% threshold for scale-down | 65 |
 | `target-memory-utilization` | Memory% threshold | 80 |
+
+#### Example: Different thresholds for up and down
+
+```yaml
+      - name: Configure Auto-Scaling
+        uses: cheelim1/ecs-autoscaler@v0.1.7
+        with:
+          aws-region: us-east-1
+          cluster-name: my-cluster
+          service-name: my-service
+          enabled: true
+          min-capacity: 2
+          max-capacity: 10
+          target-cpu-utilization-up: 80
+          target-cpu-utilization-down: 60
+          target-memory-utilization: 85
+```
+
+- `target-cpu-utilization-up` is used for the scale-up alarm (e.g., CPU >= 80 triggers scale up)
+- `target-cpu-utilization-down` is used for the scale-down alarm (e.g., CPU <= 60 triggers scale down)
 
 #### Advanced Configuration
 | Parameter | Description | Default |
@@ -212,7 +234,7 @@ Use this when you want to maintain a specific metric value:
 
 ```yaml
       - name: Configure Custom Policy With Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -239,7 +261,7 @@ Use this when you want to maintain a specific metric value:
 
 ```yaml
       - name: Configure Custom Policy Without Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.6
+        uses: cheelim1/ecs-autoscaler@v0.1.7
         with:
           aws-region: us-east-1
           cluster-name: my-cluster

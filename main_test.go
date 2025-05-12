@@ -525,3 +525,36 @@ func TestCheckCloudWatchAlarm(t *testing.T) {
 		})
 	}
 }
+
+// TestParseCPUThresholds ensures both up and down CPU thresholds are parsed correctly.
+func TestParseCPUThresholds(t *testing.T) {
+	up, err := getFloatWithDefault("80", "target-cpu-utilization-up", 75.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing up threshold: %v", err)
+	}
+	if up != 80 {
+		t.Errorf("expected up threshold 80, got %v", up)
+	}
+	down, err := getFloatWithDefault("60", "target-cpu-utilization-down", 65.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing down threshold: %v", err)
+	}
+	if down != 60 {
+		t.Errorf("expected down threshold 60, got %v", down)
+	}
+	// Test defaults
+	upDefault, err := getFloatWithDefault("", "target-cpu-utilization-up", 75.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing up default: %v", err)
+	}
+	if upDefault != 75.0 {
+		t.Errorf("expected up default 75.0, got %v", upDefault)
+	}
+	downDefault, err := getFloatWithDefault("", "target-cpu-utilization-down", 65.0)
+	if err != nil {
+		t.Errorf("unexpected error parsing down default: %v", err)
+	}
+	if downDefault != 65.0 {
+		t.Errorf("expected down default 65.0, got %v", downDefault)
+	}
+}
