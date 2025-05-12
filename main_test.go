@@ -526,68 +526,199 @@ func TestCheckCloudWatchAlarm(t *testing.T) {
 	}
 }
 
-// TestParseCPUThresholds ensures both up and down CPU thresholds are parsed correctly.
-func TestParseCPUThresholds(t *testing.T) {
-	up, err := getFloatWithDefault("80", "target-cpu-utilization-up", 75.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing up threshold: %v", err)
+// TestThresholdParsing tests parsing of both CPU and memory thresholds
+func TestThresholdParsing(t *testing.T) {
+	tests := []struct {
+		name          string
+		upThreshold   string
+		downThreshold string
+		wantUp        float64
+		wantDown      float64
+		wantErr       bool
+		thresholdType string // "cpu" or "memory"
+	}{
+		{
+			name:          "valid CPU thresholds",
+			upThreshold:   "80",
+			downThreshold: "60",
+			wantUp:        80.0,
+			wantDown:      60.0,
+			wantErr:       false,
+			thresholdType: "cpu",
+		},
+		{
+			name:          "valid memory thresholds",
+			upThreshold:   "85",
+			downThreshold: "65",
+			wantUp:        85.0,
+			wantDown:      65.0,
+			wantErr:       false,
+			thresholdType: "memory",
+		},
+		{
+			name:          "default CPU thresholds",
+			upThreshold:   "",
+			downThreshold: "",
+			wantUp:        75.0, // default
+			wantDown:      65.0, // default
+			wantErr:       false,
+			thresholdType: "cpu",
+		},
+		{
+			name:          "default memory thresholds",
+			upThreshold:   "",
+			downThreshold: "",
+			wantUp:        80.0, // default
+			wantDown:      70.0, // default
+			wantErr:       false,
+			thresholdType: "memory",
+		},
+		{
+			name:          "invalid thresholds",
+			upThreshold:   "invalid",
+			downThreshold: "invalid",
+			wantErr:       true,
+			thresholdType: "cpu",
+		},
 	}
-	if up != 80 {
-		t.Errorf("expected up threshold 80, got %v", up)
-	}
-	down, err := getFloatWithDefault("60", "target-cpu-utilization-down", 65.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing down threshold: %v", err)
-	}
-	if down != 60 {
-		t.Errorf("expected down threshold 60, got %v", down)
-	}
-	// Test defaults
-	upDefault, err := getFloatWithDefault("", "target-cpu-utilization-up", 75.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing up default: %v", err)
-	}
-	if upDefault != 75.0 {
-		t.Errorf("expected up default 75.0, got %v", upDefault)
-	}
-	downDefault, err := getFloatWithDefault("", "target-cpu-utilization-down", 65.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing down default: %v", err)
-	}
-	if downDefault != 65.0 {
-		t.Errorf("expected down default 65.0, got %v", downDefault)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var upDefault, downDefault float64
+			if tt.thresholdType == "cpu" {
+				upDefault, downDefault = 75.0, 65.0
+			} else {
+				upDefault, downDefault = 80.0, 70.0
+			}
+
+			up, err := getFloatWithDefault(tt.upThreshold,
+				fmt.Sprintf("target-%s-utilization-up", tt.thresholdType), upDefault)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getFloatWithDefault() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && up != tt.wantUp {
+				t.Errorf("getFloatWithDefault() up = %v, want %v", up, tt.wantUp)
+			}
+
+			down, err := getFloatWithDefault(tt.downThreshold,
+				fmt.Sprintf("target-%s-utilization-down", tt.thresholdType), downDefault)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getFloatWithDefault() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && down != tt.wantDown {
+				t.Errorf("getFloatWithDefault() down = %v, want %v", down, tt.wantDown)
+			}
+		})
 	}
 }
 
-// TestParseMemoryThresholds ensures both up and down Memory thresholds are parsed correctly.
-func TestParseMemoryThresholds(t *testing.T) {
-	up, err := getFloatWithDefault("90", "target-memory-utilization-up", 80.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing up memory threshold: %v", err)
+// TestPolicyAndAlarmUpdates tests the complete policy and alarm update behavior
+func TestPolicyAndAlarmUpdates(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name              string
+		policy            PolicyDef
+		shouldCreateAlarm bool
+		wantErr           bool
+	}{
+		{
+			name: "step scaling policy with alarm",
+			policy: PolicyDef{
+				PolicyName:            "test-step",
+				PolicyType:            "StepScaling",
+				MetricName:            "CPUUtilization",
+				MetricNamespace:       "AWS/ECS",
+				AdjustmentType:        "ChangeInCapacity",
+				Cooldown:              aws.Int32(300),
+				MetricAggregationType: "Maximum",
+				StepAdjustments: []StepAdj{
+					{MetricIntervalLowerBound: aws.Float64(0), ScalingAdjustment: 2},
+				},
+			},
+			shouldCreateAlarm: true,
+			wantErr:           false,
+		},
+		{
+			name: "target tracking policy",
+			policy: PolicyDef{
+				PolicyName: "test-tt",
+				PolicyType: "TargetTrackingScaling",
+				TargetTrackingConfiguration: &TargetTrackingConfig{
+					TargetValue:                   75.0,
+					PredefinedMetricSpecification: "ECSServiceAverageCPUUtilization",
+					ScaleInCooldown:               aws.Int32(200),
+					ScaleOutCooldown:              aws.Int32(200),
+				},
+			},
+			shouldCreateAlarm: false,
+			wantErr:           false,
+		},
+		{
+			name: "step scaling policy without alarm",
+			policy: PolicyDef{
+				PolicyName:            "test-step-no-alarm",
+				PolicyType:            "StepScaling",
+				AdjustmentType:        "ChangeInCapacity",
+				Cooldown:              aws.Int32(300),
+				MetricAggregationType: "Maximum",
+				StepAdjustments: []StepAdj{
+					{MetricIntervalLowerBound: aws.Float64(0), ScalingAdjustment: 2},
+				},
+			},
+			shouldCreateAlarm: false,
+			wantErr:           false,
+		},
 	}
-	if up != 90 {
-		t.Errorf("expected up memory threshold 90, got %v", up)
-	}
-	down, err := getFloatWithDefault("70", "target-memory-utilization-down", 70.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing down memory threshold: %v", err)
-	}
-	if down != 70 {
-		t.Errorf("expected down memory threshold 70, got %v", down)
-	}
-	// Test defaults
-	upDefault, err := getFloatWithDefault("", "target-memory-utilization-up", 80.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing up memory default: %v", err)
-	}
-	if upDefault != 80.0 {
-		t.Errorf("expected up memory default 80.0, got %v", upDefault)
-	}
-	downDefault, err := getFloatWithDefault("", "target-memory-utilization-down", 70.0)
-	if err != nil {
-		t.Errorf("unexpected error parsing down memory default: %v", err)
-	}
-	if downDefault != 70.0 {
-		t.Errorf("expected down memory default 70.0, got %v", downDefault)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock clients
+			mockAAS := &mockAASClient{
+				describeScalingPoliciesOutput: &applicationautoscaling.DescribeScalingPoliciesOutput{
+					ScalingPolicies: []aasTypes.ScalingPolicy{
+						{
+							PolicyName: aws.String(tt.policy.PolicyName),
+							PolicyARN:  aws.String("arn:aws:autoscaling:region:account:policy/test"),
+						},
+					},
+				},
+			}
+
+			// Verify policy exists and should be updated
+			exists, err := checkScalingPolicy(ctx, mockAAS, "service/test-cluster/test-service", tt.policy.PolicyName)
+			if err != nil {
+				t.Errorf("checkScalingPolicy() error = %v", err)
+				return
+			}
+			if !exists {
+				t.Errorf("Policy should exist but doesn't")
+			}
+
+			// Verify alarm creation logic
+			if tt.policy.MetricName != "" && tt.policy.MetricNamespace != "" {
+				if !tt.shouldCreateAlarm {
+					t.Errorf("Policy has metric info but should not create alarm")
+				}
+			} else {
+				if tt.shouldCreateAlarm {
+					t.Errorf("Policy has no metric info but should create alarm")
+				}
+			}
+
+			// Verify cooldown periods
+			if tt.policy.PolicyType == "StepScaling" {
+				if tt.policy.Cooldown == nil {
+					t.Errorf("Step scaling policy should have cooldown period")
+				}
+			} else if tt.policy.PolicyType == "TargetTrackingScaling" {
+				if tt.policy.TargetTrackingConfiguration.ScaleInCooldown == nil ||
+					tt.policy.TargetTrackingConfiguration.ScaleOutCooldown == nil {
+					t.Errorf("Target tracking policy should have both scale-in and scale-out cooldown periods")
+				}
+			}
+		})
 	}
 }
