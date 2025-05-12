@@ -332,7 +332,7 @@ func main() {
 							PolicyNames:       []string{p.PolicyName},
 						})
 						if err != nil || len(polDesc.ScalingPolicies) == 0 {
-							slog.Error("failed to describe scaling policy for alarm", "policy_name", p.PolicyName, "error", err)
+							slog.Error("failed to describe scaling policy for alarm", "policy_name", p.PolicyName, "metric_namespace", p.MetricNamespace, "error", err)
 							os.Exit(1)
 						}
 						policyARN := *polDesc.ScalingPolicies[0].PolicyARN
