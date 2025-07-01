@@ -21,10 +21,16 @@ import (
 type AASClient interface {
 	DescribeScalableTargets(ctx context.Context, params *aas.DescribeScalableTargetsInput, optFns ...func(*aas.Options)) (*aas.DescribeScalableTargetsOutput, error)
 	DescribeScalingPolicies(ctx context.Context, params *aas.DescribeScalingPoliciesInput, optFns ...func(*aas.Options)) (*aas.DescribeScalingPoliciesOutput, error)
+	RegisterScalableTarget(ctx context.Context, params *aas.RegisterScalableTargetInput, optFns ...func(*aas.Options)) (*aas.RegisterScalableTargetOutput, error)
+	PutScalingPolicy(ctx context.Context, params *aas.PutScalingPolicyInput, optFns ...func(*aas.Options)) (*aas.PutScalingPolicyOutput, error)
+	DeleteScalingPolicy(ctx context.Context, params *aas.DeleteScalingPolicyInput, optFns ...func(*aas.Options)) (*aas.DeleteScalingPolicyOutput, error)
+	DeregisterScalableTarget(ctx context.Context, params *aas.DeregisterScalableTargetInput, optFns ...func(*aas.Options)) (*aas.DeregisterScalableTargetOutput, error)
 }
 
 type CWClient interface {
 	DescribeAlarms(ctx context.Context, params *cw.DescribeAlarmsInput, optFns ...func(*cw.Options)) (*cw.DescribeAlarmsOutput, error)
+	DeleteAlarms(ctx context.Context, params *cw.DeleteAlarmsInput, optFns ...func(*cw.Options)) (*cw.DeleteAlarmsOutput, error)
+	PutMetricAlarm(ctx context.Context, params *cw.PutMetricAlarmInput, optFns ...func(*cw.Options)) (*cw.PutMetricAlarmOutput, error)
 }
 
 // Set up structured logging with slog
@@ -110,6 +116,20 @@ func checkScalableTarget(ctx context.Context, client AASClient, resourceID strin
 
 	target := resp.ScalableTargets[0]
 	return *target.MinCapacity == minCap && *target.MaxCapacity == maxCap, nil
+}
+
+// Check if scalable target exists (without checking capacity values)
+func scalableTargetExists(ctx context.Context, client AASClient, resourceID string) (bool, error) {
+	resp, err := client.DescribeScalableTargets(ctx, &aas.DescribeScalableTargetsInput{
+		ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
+		ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
+		ResourceIds:       []string{resourceID},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to describe scalable target: %v", err)
+	}
+
+	return len(resp.ScalableTargets) > 0, nil
 }
 
 // Check if scaling policy exists and matches desired configuration
@@ -246,7 +266,7 @@ func main() {
 		slog.Info("disabling auto-scaling", "resource", resourceID, "cluster", cluster, "service", service)
 
 		// First check if scalable target exists to determine if auto-scaling was ever enabled
-		exists, err := checkScalableTarget(context.TODO(), aasClient, resourceID, minCap32, maxCap32)
+		exists, err := scalableTargetExists(context.TODO(), aasClient, resourceID)
 		if err != nil {
 			slog.Error("failed to check scalable target", "error", err)
 			os.Exit(1)
