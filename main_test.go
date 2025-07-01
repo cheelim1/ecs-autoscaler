@@ -25,6 +25,8 @@ type mockAASClient struct {
 	describeScalingPoliciesError  error
 	deleteScalingPolicyError      error
 	deregisterScalableTargetError error
+	registerScalableTargetError   error
+	putScalingPolicyError         error
 }
 
 func (m *mockAASClient) DescribeScalableTargets(ctx context.Context, params *applicationautoscaling.DescribeScalableTargetsInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DescribeScalableTargetsOutput, error) {
@@ -33,6 +35,14 @@ func (m *mockAASClient) DescribeScalableTargets(ctx context.Context, params *app
 
 func (m *mockAASClient) DescribeScalingPolicies(ctx context.Context, params *applicationautoscaling.DescribeScalingPoliciesInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DescribeScalingPoliciesOutput, error) {
 	return m.describeScalingPoliciesOutput, m.describeScalingPoliciesError
+}
+
+func (m *mockAASClient) RegisterScalableTarget(ctx context.Context, params *applicationautoscaling.RegisterScalableTargetInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.RegisterScalableTargetOutput, error) {
+	return &applicationautoscaling.RegisterScalableTargetOutput{}, m.registerScalableTargetError
+}
+
+func (m *mockAASClient) PutScalingPolicy(ctx context.Context, params *applicationautoscaling.PutScalingPolicyInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.PutScalingPolicyOutput, error) {
+	return &applicationautoscaling.PutScalingPolicyOutput{}, m.putScalingPolicyError
 }
 
 func (m *mockAASClient) DeleteScalingPolicy(ctx context.Context, params *applicationautoscaling.DeleteScalingPolicyInput, optFns ...func(*applicationautoscaling.Options)) (*applicationautoscaling.DeleteScalingPolicyOutput, error) {
@@ -47,6 +57,7 @@ type mockCWClient struct {
 	describeAlarmsOutput *cloudwatch.DescribeAlarmsOutput
 	describeAlarmsError  error
 	deleteAlarmsError    error
+	putMetricAlarmError  error
 }
 
 func (m *mockCWClient) DescribeAlarms(ctx context.Context, params *cloudwatch.DescribeAlarmsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.DescribeAlarmsOutput, error) {
@@ -55,6 +66,10 @@ func (m *mockCWClient) DescribeAlarms(ctx context.Context, params *cloudwatch.De
 
 func (m *mockCWClient) DeleteAlarms(ctx context.Context, params *cloudwatch.DeleteAlarmsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.DeleteAlarmsOutput, error) {
 	return &cloudwatch.DeleteAlarmsOutput{}, m.deleteAlarmsError
+}
+
+func (m *mockCWClient) PutMetricAlarm(ctx context.Context, params *cloudwatch.PutMetricAlarmInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricAlarmOutput, error) {
+	return &cloudwatch.PutMetricAlarmOutput{}, m.putMetricAlarmError
 }
 
 // TestGetIntWithDefault_Valid ensures getIntWithDefault returns the correct integer for a valid string.
@@ -1037,4 +1052,69 @@ func cleanupAutoScaling(ctx context.Context, aasClient *mockAASClient, cwClient 
 	}
 
 	return nil
+}
+
+// TestScalableTargetExists tests the new scalableTargetExists function
+func TestScalableTargetExists(t *testing.T) {
+	// Create a mock context
+	ctx := context.Background()
+
+	// Test cases
+	tests := []struct {
+		name     string
+		resource string
+		mock     *mockAASClient
+		want     bool
+		wantErr  bool
+	}{
+		{
+			name:     "scalable target exists",
+			resource: "service/test-cluster/test-service",
+			mock: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{
+						{
+							MinCapacity: aws.Int32(2),  // Different from what we might pass
+							MaxCapacity: aws.Int32(15), // Different from what we might pass
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:     "scalable target does not exist",
+			resource: "service/nonexistent-cluster/nonexistent-service",
+			mock: &mockAASClient{
+				describeScalableTargetsOutput: &applicationautoscaling.DescribeScalableTargetsOutput{
+					ScalableTargets: []aasTypes.ScalableTarget{},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:     "error case",
+			resource: "service/error-cluster/error-service",
+			mock: &mockAASClient{
+				describeScalableTargetsError: fmt.Errorf("mock error"),
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := scalableTargetExists(ctx, tt.mock, tt.resource)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("scalableTargetExists() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("scalableTargetExists() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
