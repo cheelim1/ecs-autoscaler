@@ -159,6 +159,155 @@ func checkCloudWatchAlarm(ctx context.Context, client CWClient, alarmName string
 	return len(resp.MetricAlarms) > 0, nil
 }
 
+// Compare existing scaling policy with desired configuration
+func compareScalingPolicy(ctx context.Context, client AASClient, resourceID, policyName string, desired *aas.PutScalingPolicyInput) (bool, error) {
+	resp, err := client.DescribeScalingPolicies(ctx, &aas.DescribeScalingPoliciesInput{
+		ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
+		ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
+		ResourceId:        aws.String(resourceID),
+		PolicyNames:       []string{policyName},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to describe scaling policy: %v", err)
+	}
+
+	if len(resp.ScalingPolicies) == 0 {
+		return false, nil // Policy doesn't exist
+	}
+
+	existing := resp.ScalingPolicies[0]
+
+	// Compare policy type
+	if existing.PolicyType != desired.PolicyType {
+		return false, nil
+	}
+
+	// Compare based on policy type
+	switch desired.PolicyType {
+	case aasTypes.PolicyTypeStepScaling:
+		if existing.StepScalingPolicyConfiguration == nil || desired.StepScalingPolicyConfiguration == nil {
+			return false, nil
+		}
+
+		existingStep := existing.StepScalingPolicyConfiguration
+		desiredStep := desired.StepScalingPolicyConfiguration
+
+		if existingStep.AdjustmentType != desiredStep.AdjustmentType ||
+			existingStep.MetricAggregationType != desiredStep.MetricAggregationType {
+			return false, nil
+		}
+
+		// Compare cooldown (handle nil cases)
+		if (existingStep.Cooldown == nil) != (desiredStep.Cooldown == nil) {
+			return false, nil
+		}
+		if existingStep.Cooldown != nil && desiredStep.Cooldown != nil && *existingStep.Cooldown != *desiredStep.Cooldown {
+			return false, nil
+		}
+
+		// Compare step adjustments
+		if len(existingStep.StepAdjustments) != len(desiredStep.StepAdjustments) {
+			return false, nil
+		}
+
+		for i, existingAdj := range existingStep.StepAdjustments {
+			desiredAdj := desiredStep.StepAdjustments[i]
+
+			// Compare bounds (handle nil cases)
+			if (existingAdj.MetricIntervalLowerBound == nil) != (desiredAdj.MetricIntervalLowerBound == nil) ||
+				(existingAdj.MetricIntervalUpperBound == nil) != (desiredAdj.MetricIntervalUpperBound == nil) {
+				return false, nil
+			}
+
+			if existingAdj.MetricIntervalLowerBound != nil && desiredAdj.MetricIntervalLowerBound != nil &&
+				*existingAdj.MetricIntervalLowerBound != *desiredAdj.MetricIntervalLowerBound {
+				return false, nil
+			}
+
+			if existingAdj.MetricIntervalUpperBound != nil && desiredAdj.MetricIntervalUpperBound != nil &&
+				*existingAdj.MetricIntervalUpperBound != *desiredAdj.MetricIntervalUpperBound {
+				return false, nil
+			}
+
+			if *existingAdj.ScalingAdjustment != *desiredAdj.ScalingAdjustment {
+				return false, nil
+			}
+		}
+
+	case aasTypes.PolicyTypeTargetTrackingScaling:
+		if existing.TargetTrackingScalingPolicyConfiguration == nil || desired.TargetTrackingScalingPolicyConfiguration == nil {
+			return false, nil
+		}
+
+		existingTT := existing.TargetTrackingScalingPolicyConfiguration
+		desiredTT := desired.TargetTrackingScalingPolicyConfiguration
+
+		if *existingTT.TargetValue != *desiredTT.TargetValue {
+			return false, nil
+		}
+
+		// Compare cooldowns (handle nil cases)
+		if (existingTT.ScaleInCooldown == nil) != (desiredTT.ScaleInCooldown == nil) ||
+			(existingTT.ScaleOutCooldown == nil) != (desiredTT.ScaleOutCooldown == nil) {
+			return false, nil
+		}
+
+		if existingTT.ScaleInCooldown != nil && desiredTT.ScaleInCooldown != nil &&
+			*existingTT.ScaleInCooldown != *desiredTT.ScaleInCooldown {
+			return false, nil
+		}
+
+		if existingTT.ScaleOutCooldown != nil && desiredTT.ScaleOutCooldown != nil &&
+			*existingTT.ScaleOutCooldown != *desiredTT.ScaleOutCooldown {
+			return false, nil
+		}
+
+		// Compare metric specifications
+		if (existingTT.PredefinedMetricSpecification == nil) != (desiredTT.PredefinedMetricSpecification == nil) {
+			return false, nil
+		}
+
+		if existingTT.PredefinedMetricSpecification != nil && desiredTT.PredefinedMetricSpecification != nil {
+			if existingTT.PredefinedMetricSpecification.PredefinedMetricType != desiredTT.PredefinedMetricSpecification.PredefinedMetricType {
+				return false, nil
+			}
+		}
+
+		if (existingTT.CustomizedMetricSpecification == nil) != (desiredTT.CustomizedMetricSpecification == nil) {
+			return false, nil
+		}
+
+		if existingTT.CustomizedMetricSpecification != nil && desiredTT.CustomizedMetricSpecification != nil {
+			existingCustom := existingTT.CustomizedMetricSpecification
+			desiredCustom := desiredTT.CustomizedMetricSpecification
+
+			if *existingCustom.MetricName != *desiredCustom.MetricName ||
+				*existingCustom.Namespace != *desiredCustom.Namespace ||
+				existingCustom.Statistic != desiredCustom.Statistic {
+				return false, nil
+			}
+
+			// Compare dimensions
+			if len(existingCustom.Dimensions) != len(desiredCustom.Dimensions) {
+				return false, nil
+			}
+
+			existingDims := make(map[string]string)
+			for _, dim := range existingCustom.Dimensions {
+				existingDims[*dim.Name] = *dim.Value
+			}
+
+			for _, dim := range desiredCustom.Dimensions {
+				if existingDims[*dim.Name] != *dim.Value {
+					return false, nil
+				}
+			}
+		}
+	}
+
+	return true, nil // Configuration matches
+}
+
 // Helper function to deduplicate string slices
 func deduplicate(slice []string) []string {
 	seen := make(map[string]bool)
@@ -419,9 +568,12 @@ func main() {
 		}
 	}
 
-	// For each policy, always call PutScalingPolicy to update or create
+	// For each policy, compare with existing configuration and update only if needed
 	for _, p := range policies {
-		slog.Info("applying policy", "policy_name", p.PolicyName)
+		slog.Info("processing policy", "policy_name", p.PolicyName)
+
+		var policyInput *aas.PutScalingPolicyInput
+
 		switch p.PolicyType {
 		case "StepScaling":
 			// build step adjustments
@@ -433,7 +585,7 @@ func main() {
 					ScalingAdjustment:        aws.Int32(adj.ScalingAdjustment),
 				})
 			}
-			_, err := aasClient.PutScalingPolicy(context.TODO(), &aas.PutScalingPolicyInput{
+			policyInput = &aas.PutScalingPolicyInput{
 				ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 				ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 				ResourceId:        aws.String(resourceID),
@@ -445,73 +597,6 @@ func main() {
 					MetricAggregationType: aasTypes.MetricAggregationType(p.MetricAggregationType),
 					StepAdjustments:       sa,
 				},
-			})
-			if err != nil {
-				slog.Error("failed to put scaling policy", "policy_name", p.PolicyName, "error", err)
-				os.Exit(1)
-			}
-
-			// Only create/update CloudWatch alarm if both metric_name and metric_namespace are provided
-			if p.MetricName != "" && p.MetricNamespace != "" {
-				// Fetch policy ARN
-				polDesc, err := aasClient.DescribeScalingPolicies(context.TODO(), &aas.DescribeScalingPoliciesInput{
-					ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
-					ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
-					ResourceId:        aws.String(resourceID),
-					PolicyNames:       []string{p.PolicyName},
-				})
-				if err != nil || len(polDesc.ScalingPolicies) == 0 {
-					slog.Error("failed to describe scaling policy for alarm", "policy_name", p.PolicyName, "metric_namespace", p.MetricNamespace, "error", err)
-					os.Exit(1)
-				}
-				policyARN := *polDesc.ScalingPolicies[0].PolicyARN
-				alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
-				// Determine threshold and comparison operator based on scaling direction (scale-in vs scale-out)
-				var threshold float64
-				var compOp cwTypes.ComparisonOperator
-				if p.ScaleDirection == "in" {
-					threshold = targetCPUIn
-					compOp = cwTypes.ComparisonOperatorLessThanOrEqualToThreshold
-				} else if p.ScaleDirection == "out" {
-					threshold = targetCPUOut
-					compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
-				} else {
-					threshold = targetCPUOut
-					compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
-				}
-				slog.Info("DEBUG: About to update/create CloudWatch alarm",
-					"alarm_name", alarmName,
-					"policy_name", p.PolicyName,
-					"policy_type", p.PolicyType,
-					"threshold", threshold,
-					"comparison_operator", compOp,
-					"namespace", p.MetricNamespace,
-					"metric_name", p.MetricName,
-				)
-				result, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
-					AlarmName:          aws.String(alarmName),
-					AlarmDescription:   aws.String(fmt.Sprintf("Scale based on %s", p.MetricName)),
-					Namespace:          aws.String(p.MetricNamespace),
-					MetricName:         aws.String(p.MetricName),
-					Statistic:          cwTypes.StatisticAverage,
-					Period:             aws.Int32(*p.Cooldown),
-					EvaluationPeriods:  aws.Int32(2),
-					Threshold:          aws.Float64(threshold),
-					ComparisonOperator: compOp,
-					Dimensions: []cwTypes.Dimension{
-						{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
-						{Name: aws.String("ServiceName"), Value: aws.String(service)},
-					},
-					AlarmActions: []string{policyARN},
-				})
-				if err != nil {
-					slog.Error("failed to put metric alarm", "alarm_name", alarmName, "error", err)
-					os.Exit(1)
-				}
-				slog.Info("DEBUG: PutMetricAlarm call succeeded", "alarm_name", alarmName, "result", result)
-				slog.Info("created/updated CloudWatch alarm for custom policy", "alarm_name", alarmName)
-			} else {
-				slog.Info("no metric_name/metric_namespace specified; no alarm created for this custom policy", "policy_name", p.PolicyName)
 			}
 
 		case "TargetTrackingScaling":
@@ -537,22 +622,121 @@ func main() {
 			cfgTT.ScaleInCooldown = p.TargetTrackingConfiguration.ScaleInCooldown
 			cfgTT.ScaleOutCooldown = p.TargetTrackingConfiguration.ScaleOutCooldown
 
-			_, err := aasClient.PutScalingPolicy(context.TODO(), &aas.PutScalingPolicyInput{
+			policyInput = &aas.PutScalingPolicyInput{
 				ServiceNamespace:                         aasTypes.ServiceNamespaceEcs,
 				ScalableDimension:                        aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 				ResourceId:                               aws.String(resourceID),
 				PolicyName:                               aws.String(p.PolicyName),
 				PolicyType:                               aasTypes.PolicyTypeTargetTrackingScaling,
 				TargetTrackingScalingPolicyConfiguration: cfgTT,
-			})
-			if err != nil {
-				slog.Error("failed to put scaling policy", "policy_name", p.PolicyName, "error", err)
-				os.Exit(1)
 			}
 
 		default:
 			slog.Error("unknown policy_type", "policy_type", p.PolicyType)
 			os.Exit(1)
+		}
+
+		// Check if policy needs to be updated
+		policyMatches, err := compareScalingPolicy(context.TODO(), aasClient, resourceID, p.PolicyName, policyInput)
+		if err != nil {
+			slog.Error("failed to compare scaling policy", "policy_name", p.PolicyName, "error", err)
+			os.Exit(1)
+		}
+
+		policyExists := true
+		if !policyMatches {
+			// Check if policy exists at all
+			exists, err := checkScalingPolicy(context.TODO(), aasClient, resourceID, p.PolicyName)
+			if err != nil {
+				slog.Error("failed to check scaling policy existence", "policy_name", p.PolicyName, "error", err)
+				os.Exit(1)
+			}
+			policyExists = exists
+
+			if policyExists {
+				slog.Info("updating scaling policy configuration", "policy_name", p.PolicyName)
+			} else {
+				slog.Info("creating new scaling policy", "policy_name", p.PolicyName)
+			}
+			_, err = aasClient.PutScalingPolicy(context.TODO(), policyInput)
+			if err != nil {
+				slog.Error("failed to put scaling policy", "policy_name", p.PolicyName, "error", err)
+				os.Exit(1)
+			}
+		} else {
+			slog.Info("scaling policy is up to date", "policy_name", p.PolicyName)
+		}
+
+		// Only create alarms for NEW policies to prevent "Multiple alarms attached" warnings
+		// If policy already existed, we leave existing alarms completely alone
+		if p.PolicyType == "StepScaling" && p.MetricName != "" && p.MetricNamespace != "" && !policyExists {
+			slog.Info("creating CloudWatch alarm for new scaling policy", "policy_name", p.PolicyName)
+
+			// Fetch policy ARN (needed for alarm configuration)
+			polDesc, err := aasClient.DescribeScalingPolicies(context.TODO(), &aas.DescribeScalingPoliciesInput{
+				ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
+				ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
+				ResourceId:        aws.String(resourceID),
+				PolicyNames:       []string{p.PolicyName},
+			})
+			if err != nil || len(polDesc.ScalingPolicies) == 0 {
+				slog.Error("failed to describe scaling policy for alarm", "policy_name", p.PolicyName, "error", err)
+				os.Exit(1)
+			}
+			policyARN := *polDesc.ScalingPolicies[0].PolicyARN
+			alarmName := fmt.Sprintf("%s-%s-%s", cluster, service, p.PolicyName)
+
+			// Determine threshold and comparison operator based on scaling direction
+			var threshold float64
+			var compOp cwTypes.ComparisonOperator
+			if p.ScaleDirection == "in" {
+				threshold = targetCPUIn
+				compOp = cwTypes.ComparisonOperatorLessThanOrEqualToThreshold
+			} else if p.ScaleDirection == "out" {
+				threshold = targetCPUOut
+				compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
+			} else {
+				threshold = targetCPUOut
+				compOp = cwTypes.ComparisonOperatorGreaterThanOrEqualToThreshold
+			}
+
+			alarmInput := &cw.PutMetricAlarmInput{
+				AlarmName:          aws.String(alarmName),
+				AlarmDescription:   aws.String(fmt.Sprintf("Scale based on %s", p.MetricName)),
+				Namespace:          aws.String(p.MetricNamespace),
+				MetricName:         aws.String(p.MetricName),
+				Statistic:          cwTypes.StatisticAverage,
+				Period:             aws.Int32(*p.Cooldown),
+				EvaluationPeriods:  aws.Int32(2),
+				Threshold:          aws.Float64(threshold),
+				ComparisonOperator: compOp,
+				Dimensions: []cwTypes.Dimension{
+					{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
+					{Name: aws.String("ServiceName"), Value: aws.String(service)},
+				},
+				AlarmActions: []string{policyARN},
+			}
+
+			// Check if alarm already exists - if it does, leave it alone
+			var alarmExists bool
+			alarmExists, err = checkCloudWatchAlarm(context.TODO(), cwClient, alarmName)
+			if err != nil {
+				slog.Error("failed to check CloudWatch alarm existence", "alarm_name", alarmName, "error", err)
+				os.Exit(1)
+			}
+
+			if !alarmExists {
+				slog.Info("creating CloudWatch alarm for new policy", "alarm_name", alarmName)
+				_, err = cwClient.PutMetricAlarm(context.TODO(), alarmInput)
+				if err != nil {
+					slog.Error("failed to put metric alarm", "alarm_name", alarmName, "error", err)
+					os.Exit(1)
+				}
+			} else {
+				slog.Info("CloudWatch alarm already exists, leaving unchanged", "alarm_name", alarmName)
+			}
+		} else if p.PolicyType == "StepScaling" && p.MetricName != "" && p.MetricNamespace != "" {
+			slog.Info("scaling policy already exists, leaving existing alarms unchanged", "policy_name", p.PolicyName)
 		}
 	}
 	if len(policies) > 0 {
@@ -571,7 +755,7 @@ func main() {
 		{fmt.Sprintf("%s-%s-scale-out", cluster, service), 1, outCd32},
 		{fmt.Sprintf("%s-%s-scale-in", cluster, service), -1, inCd32},
 	} {
-		if _, err := aasClient.PutScalingPolicy(context.TODO(), &aas.PutScalingPolicyInput{
+		policyInput := &aas.PutScalingPolicyInput{
 			ServiceNamespace:  aasTypes.ServiceNamespaceEcs,
 			ScalableDimension: aasTypes.ScalableDimension("ecs:service:DesiredCount"),
 			ResourceId:        aws.String(resourceID),
@@ -583,9 +767,23 @@ func main() {
 				MetricAggregationType: aasTypes.MetricAggregationTypeMaximum,
 				StepAdjustments:       []aasTypes.StepAdjustment{{MetricIntervalLowerBound: aws.Float64(0), ScalingAdjustment: aws.Int32(info.adjust)}},
 			},
-		}); err != nil {
-			slog.Error("failed to put scaling policy", "policy_name", info.name, "error", err)
+		}
+
+		// Check if policy needs to be updated
+		policyMatches, err := compareScalingPolicy(context.TODO(), aasClient, resourceID, info.name, policyInput)
+		if err != nil {
+			slog.Error("failed to compare scaling policy", "policy_name", info.name, "error", err)
 			os.Exit(1)
+		}
+
+		if !policyMatches {
+			slog.Info("updating default scaling policy", "policy_name", info.name)
+			if _, err := aasClient.PutScalingPolicy(context.TODO(), policyInput); err != nil {
+				slog.Error("failed to put scaling policy", "policy_name", info.name, "error", err)
+				os.Exit(1)
+			}
+		} else {
+			slog.Info("default scaling policy is up to date", "policy_name", info.name)
 		}
 	}
 
@@ -658,46 +856,43 @@ func main() {
 		},
 	}
 
-	// Check and create CloudWatch alarms only if they don't exist
+	// Only create alarms if they don't already exist
+	slog.Info("configuring CloudWatch alarms for default policies")
 	for _, a := range alarms {
-		slog.Info("DEBUG: About to update/create CloudWatch alarm",
-			"alarm_name", a.name,
-			"desc", a.desc,
-			"threshold", a.threshold,
-			"namespace", "AWS/ECS",
-			"metric_name", a.metric,
-		)
-		exists, err := checkCloudWatchAlarm(context.TODO(), cwClient, a.name)
+		alarmInput := &cw.PutMetricAlarmInput{
+			AlarmName:          aws.String(a.name),
+			AlarmDescription:   aws.String(a.desc),
+			Namespace:          aws.String("AWS/ECS"),
+			MetricName:         aws.String(a.metric),
+			Statistic:          cwTypes.StatisticAverage,
+			Period:             aws.Int32(a.period),
+			EvaluationPeriods:  aws.Int32(2),
+			Threshold:          aws.Float64(a.threshold),
+			ComparisonOperator: a.comp,
+			Dimensions: []cwTypes.Dimension{
+				{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
+				{Name: aws.String("ServiceName"), Value: aws.String(service)},
+			},
+			AlarmActions: []string{a.arn},
+		}
+
+		// Check if alarm already exists - if it does, leave it alone
+		var alarmExists bool
+		alarmExists, err = checkCloudWatchAlarm(context.TODO(), cwClient, a.name)
 		if err != nil {
-			slog.Error("failed to check CloudWatch alarm", "alarm_name", a.name, "error", err)
+			slog.Error("failed to check CloudWatch alarm existence", "alarm_name", a.name, "error", err)
 			os.Exit(1)
 		}
 
-		if !exists {
-			slog.Info("creating CloudWatch alarm", "alarm_name", a.name)
-			result, err := cwClient.PutMetricAlarm(context.TODO(), &cw.PutMetricAlarmInput{
-				AlarmName:          aws.String(a.name),
-				AlarmDescription:   aws.String(a.desc),
-				Namespace:          aws.String("AWS/ECS"),
-				MetricName:         aws.String(a.metric),
-				Statistic:          cwTypes.StatisticAverage,
-				Period:             aws.Int32(a.period),
-				EvaluationPeriods:  aws.Int32(2),
-				Threshold:          aws.Float64(a.threshold),
-				ComparisonOperator: a.comp,
-				Dimensions: []cwTypes.Dimension{
-					{Name: aws.String("ClusterName"), Value: aws.String(cluster)},
-					{Name: aws.String("ServiceName"), Value: aws.String(service)},
-				},
-				AlarmActions: []string{a.arn},
-			})
+		if !alarmExists {
+			slog.Info("creating CloudWatch alarm for default policy", "alarm_name", a.name)
+			_, err = cwClient.PutMetricAlarm(context.TODO(), alarmInput)
 			if err != nil {
 				slog.Error("failed to put metric alarm", "alarm_name", a.name, "error", err)
 				os.Exit(1)
 			}
-			slog.Info("DEBUG: PutMetricAlarm call succeeded", "alarm_name", a.name, "result", result)
 		} else {
-			slog.Info("CloudWatch alarm already exists", "alarm_name", a.name)
+			slog.Info("CloudWatch alarm already exists, leaving unchanged", "alarm_name", a.name)
 		}
 	}
 

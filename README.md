@@ -9,6 +9,10 @@ Written in Go and published as a Docker-based action.
 - Custom JSON-defined **StepScaling** and **TargetTrackingScaling** policies  
 - Support for **predefined** or **custom** metrics, cooldowns, and thresholds  
 - Default policies support for common scaling patterns
+- **New policies**: Creates alarms automatically with proper associations
+- **Existing policies**: Leaves existing alarms completely unchanged
+- **Zero conflicts**: Never overwrites manually configured alarms
+- **Safe coexistence**: Works perfectly alongside manual alarm management
 
 ## Quick Start
 
@@ -27,7 +31,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -48,7 +52,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -66,7 +70,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -91,7 +95,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -148,7 +152,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -237,9 +241,39 @@ Use this when you want to maintain a specific metric value:
 
 ### Example: Custom Policy With Alarm Creation
 
+**When scaling policies exist:**
+- ✅ Updates policy configuration if needed
+- ✅ **Leaves existing alarms completely unchanged**
+- ✅ Respects manual alarm configurations
+- ✅ No "Multiple alarms attached" warnings
+
+**When creating new policies:**
+- ✅ Creates properly associated CloudWatch alarms
+- ✅ Uses your specified thresholds and configurations
+- ✅ Clean, conflict-free setup
+
+### Default Step Scaling (No Custom Policies)
+- Creates CPU and memory utilization alarms (high/low) for new scaling policies
+- Uses the `target-cpu-utilization-*` and `target-memory-utilization-*` parameters
+- If alarms already exist, leaves them unchanged
+
+### Custom Scaling Policies
+- **With `metric_name` and `metric_namespace`**: Creates alarm for new policies only
+- **Without `metric_name` and `metric_namespace`**: No alarm creation (you manage alarms)
+- **Existing policies**: Never touches existing alarms regardless of configuration
+
+### Migration from Previous Versions
+If you're upgrading from earlier versions:
+- ✅ **No action required** - existing setups continue working
+- ✅ **No alarm conflicts** - tool respects existing configurations  
+- ✅ **Gradual adoption** - benefit from elegant management on next policy changes
+
+## Behavior Examples
+
+### Example 1: First-Time Setup
 ```yaml
       - name: Configure Custom Policy With Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -288,7 +322,7 @@ Use this when you want to maintain a specific metric value:
 
 ```yaml
       - name: Configure Custom Policy Without Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.15
+        uses: cheelim1/ecs-autoscaler@v0.1.16
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -309,4 +343,3 @@ Use this when you want to maintain a specific metric value:
             ]
 ```
 
-In the second example, **no alarm will be created or attached** for the custom policy.
