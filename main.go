@@ -159,6 +159,19 @@ func checkCloudWatchAlarm(ctx context.Context, client CWClient, alarmName string
 	return len(resp.MetricAlarms) > 0, nil
 }
 
+// Helper function to deduplicate string slices
+func deduplicate(slice []string) []string {
+	seen := make(map[string]bool)
+	result := []string{}
+	for _, item := range slice {
+		if !seen[item] {
+			seen[item] = true
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
 func main() {
 	// we expect 14 args after program name
 	if len(os.Args) != 17 {
@@ -344,6 +357,9 @@ func main() {
 		for _, p := range policies {
 			policyNames = append(policyNames, p.PolicyName)
 		}
+
+		// Deduplicate policy names to avoid attempting to delete the same policy twice
+		policyNames = deduplicate(policyNames)
 
 		// Check and delete only existing scaling policies
 		existingPolicies := []string{}

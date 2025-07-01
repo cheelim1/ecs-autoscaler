@@ -1118,3 +1118,60 @@ func TestScalableTargetExists(t *testing.T) {
 		})
 	}
 }
+
+// TestDeduplicate tests the deduplicate function
+func TestDeduplicate(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "no duplicates",
+			input:    []string{"a", "b", "c"},
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "with duplicates",
+			input:    []string{"a", "b", "a", "c", "b"},
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "empty slice",
+			input:    []string{},
+			expected: []string{},
+		},
+		{
+			name:     "all duplicates",
+			input:    []string{"a", "a", "a"},
+			expected: []string{"a"},
+		},
+		{
+			name:     "policy name duplication scenario",
+			input:    []string{"prod-svc-campaign-scale-out", "prod-svc-campaign-scale-in", "prod-svc-campaign-scale-out", "prod-svc-campaign-scale-in"},
+			expected: []string{"prod-svc-campaign-scale-out", "prod-svc-campaign-scale-in"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := deduplicate(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("deduplicate() length = %v, want %v", len(result), len(tt.expected))
+				return
+			}
+
+			// Check that all expected items are present
+			expectedMap := make(map[string]bool)
+			for _, item := range tt.expected {
+				expectedMap[item] = true
+			}
+
+			for _, item := range result {
+				if !expectedMap[item] {
+					t.Errorf("deduplicate() contains unexpected item: %v", item)
+				}
+			}
+		})
+	}
+}
