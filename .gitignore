@@ -1,0 +1,14 @@
+# Build binary
+ecs-autoscaler
+
+# Test coverage
+covprofile
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
