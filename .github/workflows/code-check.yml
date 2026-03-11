@@ -17,7 +17,7 @@ jobs:
         id: go
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clear mod cache
         run: go clean -modcache
@@ -51,7 +51,7 @@ jobs:
         id: go
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clear mod cache
         run: go clean -modcache
