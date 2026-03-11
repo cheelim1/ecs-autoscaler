@@ -3,6 +3,10 @@
 A GitHub Action to register/deregister AWS ECS Service auto-scaling and CloudWatch alarms.
 Written in Go and published as a Docker-based action.
 
+[![Code Check](https://github.com/cheelim1/ecs-autoscaler/actions/workflows/code-check.yml/badge.svg)](https://github.com/cheelim1/ecs-autoscaler/actions/workflows/code-check.yml)
+[![CodeQL](https://github.com/cheelim1/ecs-autoscaler/actions/workflows/codeql.yml/badge.svg)](https://github.com/cheelim1/ecs-autoscaler/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Features
 
 - Built-in CPU and Memory **step-scaling** + CloudWatch alarms (default)  
@@ -31,7 +35,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -52,7 +56,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -70,7 +74,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -95,7 +99,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -152,7 +156,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -273,7 +277,7 @@ If you're upgrading from earlier versions:
 ### Example 1: First-Time Setup
 ```yaml
       - name: Configure Custom Policy With Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -322,7 +326,7 @@ If you're upgrading from earlier versions:
 
 ```yaml
       - name: Configure Custom Policy Without Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.16
+        uses: cheelim1/ecs-autoscaler@v0.1.17
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -343,3 +347,10 @@ If you're upgrading from earlier versions:
             ]
 ```
 
+## Security
+
+To report a vulnerability, please see [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
