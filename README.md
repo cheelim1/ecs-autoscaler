@@ -35,7 +35,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Enable Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -56,7 +56,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -74,7 +74,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Target Tracking
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -99,7 +99,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Custom Metric Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -156,7 +156,7 @@ This will enable auto-scaling with default settings:
 
 ```yaml
       - name: Configure Auto-Scaling
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -277,7 +277,7 @@ If you're upgrading from earlier versions:
 ### Example 1: First-Time Setup
 ```yaml
       - name: Configure Custom Policy With Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
@@ -326,7 +326,7 @@ If you're upgrading from earlier versions:
 
 ```yaml
       - name: Configure Custom Policy Without Alarm
-        uses: cheelim1/ecs-autoscaler@v0.1.17
+        uses: cheelim1/ecs-autoscaler@v0.1.18
         with:
           aws-region: us-east-1
           cluster-name: my-cluster
