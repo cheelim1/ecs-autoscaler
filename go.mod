@@ -6,7 +6,7 @@ toolchain go1.26.4
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.0
-	github.com/aws/aws-sdk-go-v2/config v1.33.1
+	github.com/aws/aws-sdk-go-v2/config v1.33.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
 	github.com/aws/aws-sdk-go-v2/service/applicationautoscaling v1.45.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0
